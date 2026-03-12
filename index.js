@@ -203,10 +203,25 @@ async function handleMessage(msg) {
     await sendMessage(chatId,
       'Suisei Bot\n\n' +
       'Commands:\n' +
-      '  /ping              — test bot is alive\n' +
-      '  /ask <question>    — ask the AI avatar\n' +
-      '  /avatar            — check avatar server status\n' +
-      '  Any plain text     — chat directly with Suisei AI\n'
+      '  /ping — test bot is alive\n' +
+      '  /ask <question> — ask the AI avatar\n' +
+      '  /avatar — check avatar server status\n' +
+      '  /help — show this message\n\n' +
+      'Just type normally to chat with Suisei AI!\n\n' +
+      'Keyword Triggers (say naturally):\n' +
+      '  Expenses: "spent 20000 on food", "bought coffee 5000"\n' +
+      '  Income: "got paid 5000000", "got paycheck 500k"\n' +
+      '  Balance: "check my balance", "how much do I have"\n' +
+      '  Tasks: "remind me to buy groceries"\n' +
+      '  Tasks+Time: "remind me to X at 18:00"\n' +
+      '  Recurring: "water plants daily at 08:00"\n' +
+      '  Complete: "done with laundry"\n' +
+      '  Task list: "what\'s on my list"\n' +
+      '  Weather: "how\'s the weather"\n' +
+      '  Calendar: "what\'s on my schedule"\n' +
+      '  Costume: "change to casual outfit"\n' +
+      '  Sleep: "go to sleep", "oyasumi"\n' +
+      '  Memory: "note this: ..." or "remember ..."\n'
     );
     return;
   }
