@@ -67,8 +67,42 @@ function apiRequest(method, params = {}) {
   });
 }
 
+function apiPost(method, body) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+
+    const options = {
+      hostname: 'api.telegram.org',
+      path: `/bot${TOKEN}/${method}`,
+      method: 'POST',
+      timeout: 35000,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    };
+
+    const req = https.request(options, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (!json.ok) reject(new Error(json.description || 'Telegram API error'));
+          else resolve(json);
+        } catch (e) { reject(new Error('JSON parse failed: ' + data.slice(0, 100))); }
+      });
+    });
+
+    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
 function sendMessage(chatId, text) {
-  return apiRequest('sendMessage', { chat_id: chatId, text }).catch(e =>
+  return apiPost('sendMessage', { chat_id: chatId, text }).catch(e =>
     console.error('[sendMessage error]', e.message)
   );
 }
