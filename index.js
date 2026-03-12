@@ -1,22 +1,8 @@
-/**
- * Suisei Telegram Bot
- *
- * Flow: S25 Edge -> Telegram -> this bot (Ubuntu Docker) -> avatar-server (PC) -> Suisei AI reply
- *
- * Environment variables (via .env):
- *   BOT_TOKEN    — Telegram bot token from @BotFather
- *   ALLOWED_ID   — Telegram user ID (number)
- *   AVATAR_SERVER_URL — avatar-server base URL (default: http://100.83.33.113:8800)
- *
- * Run: node index.js
- */
 
 'use strict';
 
 const https = require('https');
 const http  = require('http');
-
-// ─── CONFIG ────────────────────────────────────────────────────────────────
 
 const TOKEN      = process.env.BOT_TOKEN;
 const ALLOWED_ID = Number(process.env.ALLOWED_ID);
@@ -25,8 +11,6 @@ const AVATAR_SERVER_URL = process.env.AVATAR_SERVER_URL || 'http://100.83.33.113
 const AVATAR_TIMEOUT = 120000; // 120s (LLM + TTS + margin)
 
 const API_PORT = 3001;
-
-// ─── LOG RING BUFFER ───────────────────────────────────────────────────────
 
 const MAX_LOGS = 200;
 const logBuffer = [];
@@ -53,8 +37,6 @@ function pushLog(level, args) {
 console.log   = (...args) => { pushLog('info', args);  origLog(...args); };
 console.error = (...args) => { pushLog('error', args); origErr(...args); };
 console.warn  = (...args) => { pushLog('warn', args);  origWarn(...args); };
-
-// ─── TELEGRAM API ──────────────────────────────────────────────────────────
 
 let offset = 0;
 
@@ -90,8 +72,6 @@ function sendMessage(chatId, text) {
     console.error('[sendMessage error]', e.message)
   );
 }
-
-// ─── AVATAR AI SERVER ──────────────────────────────────────────────────────
 
 function avatarChat(message, userName) {
   return new Promise((resolve, reject) => {
@@ -175,8 +155,6 @@ function avatarStatus() {
   });
 }
 
-// ─── COMMAND HANDLER ───────────────────────────────────────────────────────
-
 async function handleMessage(msg) {
   const chatId = msg.chat.id;
   const text   = (msg.text || '').trim();
@@ -190,14 +168,11 @@ async function handleMessage(msg) {
 
   console.log(`[msg] from=${msg.from.id} text="${text}"`);
 
-  // Security: ignore anyone not on the whitelist
   if (msg.from.id !== ALLOWED_ID) {
     console.warn('[auth] blocked user:', msg.from.id);
     await sendMessage(chatId, 'Unauthorized.');
     return;
   }
-
-  // ── Commands ──────────────────────────────────────────────────────────────
 
   if (text === '/start' || text === '/help') {
     await sendMessage(chatId,
@@ -231,7 +206,6 @@ async function handleMessage(msg) {
     return;
   }
 
-  // ── /ask <question> — talk to avatar AI ──────────────────────────────────
   if (text.startsWith('/ask ')) {
     const question = text.slice(5).trim();
     if (!question) {
@@ -253,7 +227,6 @@ async function handleMessage(msg) {
     return;
   }
 
-  // ── /avatar — check avatar server status ──────────────────────────────────
   if (text === '/avatar') {
     try {
       const status = await avatarStatus();
@@ -275,7 +248,6 @@ async function handleMessage(msg) {
     return;
   }
 
-  // Default: treat any plain text as a chat message to the AI
   if (!text.startsWith('/')) {
     await sendMessage(chatId, '...');
     try {
@@ -293,8 +265,6 @@ async function handleMessage(msg) {
   await sendMessage(chatId, `Unknown command: ${text}\nSend /help for usage.`);
 }
 
-// ─── POLL LOOP ─────────────────────────────────────────────────────────────
-
 let _firstPoll = true;
 
 async function poll() {
@@ -308,7 +278,6 @@ async function poll() {
     if (!res.ok) {
       console.error('[poll] Telegram error:', res.description);
     } else {
-      // On first poll, skip stale messages queued while bot was down
       if (_firstPoll && res.result.length > 0) {
         const skipped = res.result.length;
         offset = res.result[res.result.length - 1].update_id + 1;
@@ -333,8 +302,6 @@ async function poll() {
 
   setImmediate(poll);
 }
-
-// ─── HTTP API (for MobileTerminal app) ─────────────────────────────────────
 
 function formatUptime(ms) {
   const s = Math.floor(ms / 1000);
@@ -371,7 +338,6 @@ const apiServer = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${API_PORT}`);
   const path = url.pathname;
 
-  // ── GET /status ───────────────────────────────────────────────────────
   if (req.method === 'GET' && path === '/status') {
     const uptimeMs = Date.now() - startTime;
     const payload = {
@@ -391,7 +357,6 @@ const apiServer = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── GET /logs ─────────────────────────────────────────────────────────
   if (req.method === 'GET' && path === '/logs') {
     const since = url.searchParams.get('since');
     let entries = logBuffer;
@@ -404,8 +369,6 @@ const apiServer = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── POST /telegram ────────────────────────────────────────────────────
-  // Send a message via the Telegram bot to the allowed user
   if (req.method === 'POST' && path === '/telegram') {
     try {
       const body = JSON.parse(await readBody(req));
@@ -425,12 +388,9 @@ const apiServer = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── 404 ───────────────────────────────────────────────────────────────
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: false, error: 'Not found' }));
 });
-
-// ─── STARTUP ───────────────────────────────────────────────────────────────
 
 function validateConfig() {
   const errors = [];
