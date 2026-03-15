@@ -3,9 +3,6 @@ services:
     build: .
     container_name: telegram-bot
     restart: unless-stopped
-    ports:
-      - "3001:3001"
+    network_mode: host
     env_file:
       - .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
