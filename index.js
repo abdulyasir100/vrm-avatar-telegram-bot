@@ -613,6 +613,8 @@ async function handleMessage(msg) {
 }
 
 let _firstPoll = true;
+let _pollBackoff = 0;
+const _POLL_BACKOFF_MAX = 60000; // max 60s between retries
 
 async function poll() {
   try {
@@ -621,6 +623,12 @@ async function poll() {
       timeout: 30,
       allowed_updates: 'message',
     });
+
+    // Success — reset backoff
+    if (_pollBackoff > 0) {
+      console.log(`[poll] Recovered after network error (was backing off ${_pollBackoff / 1000}s)`);
+    }
+    _pollBackoff = 0;
 
     if (!res.ok) {
       console.error('[poll] Telegram error:', res.description);
@@ -643,8 +651,10 @@ async function poll() {
       }
     }
   } catch (e) {
-    console.error('[poll error]', e.message);
-    await new Promise(r => setTimeout(r, 5000));
+    // Exponential backoff: 5s → 10s → 20s → 40s → 60s (capped)
+    _pollBackoff = Math.min((_pollBackoff || 2500) * 2, _POLL_BACKOFF_MAX);
+    console.error(`[poll error] ${e.message} — retrying in ${_pollBackoff / 1000}s`);
+    await new Promise(r => setTimeout(r, _pollBackoff));
   }
 
   setImmediate(poll);
