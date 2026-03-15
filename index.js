@@ -166,6 +166,80 @@ function avatarChat(message, userName) {
   });
 }
 
+function downloadTelegramFile(fileId) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Step 1: Get file path from Telegram
+      const fileInfo = await apiRequest('getFile', { file_id: fileId });
+      if (!fileInfo.ok || !fileInfo.result.file_path) {
+        return reject(new Error('Failed to get file path from Telegram'));
+      }
+
+      const filePath = fileInfo.result.file_path;
+      const fileUrl = `https://api.telegram.org/file/bot${TOKEN}/${filePath}`;
+
+      // Step 2: Download the file
+      https.get(fileUrl, { timeout: 30000 }, res => {
+        const chunks = [];
+        res.on('data', chunk => chunks.push(chunk));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+        res.on('error', reject);
+      }).on('error', reject);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+function avatarTranscribe(audioBuffer, contentType) {
+  return new Promise((resolve, reject) => {
+    const boundary = '----FormBoundary' + Math.random().toString(36).slice(2);
+    const header = Buffer.from(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="file"; filename="voice.ogg"\r\n` +
+      `Content-Type: ${contentType}\r\n\r\n`
+    );
+    const footer = Buffer.from(`\r\n--${boundary}--\r\n`);
+    const body = Buffer.concat([header, audioBuffer, footer]);
+
+    const url = new URL(AVATAR_SERVER_URL + '/transcribe');
+    console.log(`[stt] POST ${url.href} (${body.length} bytes, boundary=${boundary})`);
+
+    const req = http.request({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      timeout: 30000,
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': body.length,
+      },
+    }, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        console.log(`[stt] Response ${res.statusCode}: ${data.slice(0, 200)}`);
+        try {
+          const json = JSON.parse(data);
+          if (res.statusCode !== 200) {
+            reject(new Error(json.detail || `STT error ${res.statusCode}`));
+          } else {
+            resolve(json);
+          }
+        } catch (e) {
+          reject(new Error(`STT returned invalid JSON: ${data.slice(0, 100)}`));
+        }
+      });
+    });
+
+    req.on('timeout', () => { req.destroy(); reject(new Error('STT timeout')); });
+    req.on('error', e => { console.error(`[stt] Request error: ${e.message}`); reject(e); });
+    req.write(body);
+    req.end();
+  });
+}
+
 function avatarStatus() {
   return new Promise((resolve, reject) => {
     const url = new URL(AVATAR_SERVER_URL + '/status');
@@ -189,9 +263,112 @@ function avatarStatus() {
   });
 }
 
+function adminGet(path) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(AVATAR_SERVER_URL + path);
+    const req = http.get({
+      hostname: url.hostname, port: url.port, path: url.pathname, timeout: 5000,
+    }, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(new Error('Invalid JSON')); }
+      });
+    });
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    req.on('error', reject);
+  });
+}
+
+function adminPost(path, body) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const url = new URL(AVATAR_SERVER_URL + path);
+    const req = http.request({
+      hostname: url.hostname, port: url.port, path: url.pathname,
+      method: 'POST', timeout: 5000,
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+    }, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(new Error('Invalid JSON')); }
+      });
+    });
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+// --- Emoji toggle for emotion tags in replies ---
+let showEmotionTags = true;
+
+async function handleVoiceMessage(msg) {
+  const chatId = msg.chat.id;
+  const voice = msg.voice || msg.audio;
+  const userName = 'Venomaru';
+
+  console.log(`[voice] from=${msg.from.id} duration=${voice.duration}s size=${voice.file_size}`);
+
+  if (voice.duration > 60) {
+    await sendMessage(chatId, 'Voice message too long (max 60s).');
+    return;
+  }
+
+  await sendMessage(chatId, '...');
+
+  try {
+    // Download voice file from Telegram
+    const audioBuffer = await downloadTelegramFile(voice.file_id);
+    console.log(`[voice] Downloaded ${audioBuffer.length} bytes`);
+
+    // Transcribe via avatar-server STT
+    const sttResult = await avatarTranscribe(audioBuffer, voice.mime_type || 'audio/ogg');
+    const transcribed = sttResult.text;
+    console.log(`[voice] Transcribed (${sttResult.language}): "${transcribed}"`);
+
+    if (!transcribed) {
+      await sendMessage(chatId, "Couldn't hear what you said. Try again?");
+      return;
+    }
+
+    // Send to chat pipeline
+    const result = await avatarChat(transcribed, 'Venomaru');
+    const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
+    await sendMessage(chatId, emotionTag + result.reply);
+    console.log(`[avatar] replied: [${result.emotion}] ${result.reply.slice(0, 80)}`);
+  } catch (e) {
+    console.error(`[voice] Error: ${e.message || e}`);
+    console.error(`[voice] Stack: ${e.stack || 'no stack'}`);
+    if (e.message && (e.message.includes('STT') || e.message.includes('503'))) {
+      await sendMessage(chatId, 'Voice recognition is offline. Send text instead.');
+    } else {
+      await sendMessage(chatId, 'Failed to process voice message. Try again.');
+    }
+  }
+}
+
 async function handleMessage(msg) {
   const chatId = msg.chat.id;
-  const text   = (msg.text || '').trim();
+
+  // Handle voice messages
+  if (msg.voice || msg.audio) {
+    if (msg.from.id !== ALLOWED_ID) {
+      await sendMessage(chatId, 'Unauthorized.');
+      return;
+    }
+    messageCount++;
+    lastMessageTime = Date.now();
+    lastMessageFrom = msg.from.first_name || msg.from.username || String(msg.from.id);
+    lastMessageText = '(voice message)';
+    return handleVoiceMessage(msg);
+  }
+
+  const text = (msg.text || '').trim();
 
   if (!text) return;
 
@@ -212,31 +389,167 @@ async function handleMessage(msg) {
     await sendMessage(chatId,
       'Suisei Bot\n\n' +
       'Commands:\n' +
-      '  /ping — test bot is alive\n' +
-      '  /ask <question> — ask the AI avatar\n' +
-      '  /avatar — check avatar server status\n' +
-      '  /help — show this message\n\n' +
-      'Just type normally to chat with Suisei AI!\n\n' +
+      '  /ping — test bot\n' +
+      '  /avatar — server status\n' +
+      '  /settings — current config\n' +
+      '  /stt on|off — toggle voice recognition\n' +
+      '  /tts on|off — toggle voice synthesis\n' +
+      '  /sleep on|off — force sleep/wake\n' +
+      '  /idle <hours> — idle talk interval\n' +
+      '  /emotion on|off — show emotion tags\n' +
+      '  /memory stats|clear — memory management\n' +
+      '  /help — this message\n\n' +
+      'Just type or send a voice message to chat!\n\n' +
       'Keyword Triggers (say naturally):\n' +
-      '  Expenses: "spent 20000 on food", "bought coffee 5000"\n' +
-      '  Income: "got paid 5000000", "got paycheck 500k"\n' +
-      '  Balance: "check my balance", "how much do I have"\n' +
+      '  Expenses: "spent 20000 on food"\n' +
+      '  Income: "got paid 5000000"\n' +
+      '  Balance: "check my balance"\n' +
       '  Tasks: "remind me to buy groceries"\n' +
-      '  Tasks+Time: "remind me to X at 18:00"\n' +
-      '  Recurring: "water plants daily at 08:00"\n' +
       '  Complete: "done with laundry"\n' +
-      '  Task list: "what\'s on my list"\n' +
       '  Weather: "how\'s the weather"\n' +
       '  Calendar: "what\'s on my schedule"\n' +
       '  Costume: "change to casual outfit"\n' +
-      '  Sleep: "go to sleep", "oyasumi"\n' +
-      '  Memory: "note this: ..." or "remember ..."\n'
+      '  Memory: "note this: ..." or "remember ..."\n' +
+      '  Calories: "ate nasi goreng for lunch"\n' +
+      '  Check: "how many calories today"'
     );
     return;
   }
 
   if (text === '/ping') {
     await sendMessage(chatId, 'Pong! Bot is running on Ubuntu server.');
+    return;
+  }
+
+  // --- Admin commands ---
+
+  if (text === '/settings') {
+    try {
+      const cfg = await adminGet('/admin/config');
+      const s = cfg.sleep || {};
+      const m = cfg.memory || {};
+      const lines = [
+        'Current Settings',
+        '',
+        `STT: ${cfg.stt_enabled ? 'on' : 'off'}`,
+        `TTS: ${cfg.tts_enabled ? 'on' : 'off'}`,
+        `Idle talk: ${cfg.idle_talk_hours}h`,
+        `Emotion tags: ${showEmotionTags ? 'on' : 'off'}`,
+        `Sleep: ${s.is_sleeping ? 'sleeping' : 'awake'} (${s.sleep_schedule})`,
+        `Memory: ${m.total_messages} msgs, ${m.core_memories} core`,
+      ];
+      await sendMessage(chatId, lines.join('\n'));
+    } catch (e) {
+      await sendMessage(chatId, 'Failed to get settings: ' + e.message);
+    }
+    return;
+  }
+
+  if (text.startsWith('/stt')) {
+    const val = text.split(' ')[1];
+    if (val !== 'on' && val !== 'off') {
+      await sendMessage(chatId, 'Usage: /stt on|off');
+      return;
+    }
+    try {
+      await adminPost('/admin/config', { stt_enabled: val === 'on' });
+      await sendMessage(chatId, `STT ${val === 'on' ? 'enabled' : 'disabled'}.`);
+    } catch (e) {
+      await sendMessage(chatId, 'Failed: ' + e.message);
+    }
+    return;
+  }
+
+  if (text.startsWith('/tts')) {
+    const val = text.split(' ')[1];
+    if (val !== 'on' && val !== 'off') {
+      await sendMessage(chatId, 'Usage: /tts on|off');
+      return;
+    }
+    try {
+      await adminPost('/admin/config', { tts_enabled: val === 'on' });
+      await sendMessage(chatId, `TTS ${val === 'on' ? 'enabled' : 'disabled'}.`);
+    } catch (e) {
+      await sendMessage(chatId, 'Failed: ' + e.message);
+    }
+    return;
+  }
+
+  if (text.startsWith('/sleep')) {
+    const val = text.split(' ')[1];
+    if (val !== 'on' && val !== 'off') {
+      await sendMessage(chatId, 'Usage: /sleep on|off');
+      return;
+    }
+    try {
+      await adminPost('/admin/config', { sleep_force: val });
+      await sendMessage(chatId, val === 'on' ? 'Suisei is now sleeping.' : 'Suisei woke up.');
+    } catch (e) {
+      await sendMessage(chatId, 'Failed: ' + e.message);
+    }
+    return;
+  }
+
+  if (text.startsWith('/idle')) {
+    const val = parseFloat(text.split(' ')[1]);
+    if (isNaN(val) || val < 0.1 || val > 24) {
+      await sendMessage(chatId, 'Usage: /idle <hours> (0.1-24)');
+      return;
+    }
+    try {
+      await adminPost('/admin/config', { idle_talk_hours: val });
+      await sendMessage(chatId, `Idle talk interval set to ${val}h.`);
+    } catch (e) {
+      await sendMessage(chatId, 'Failed: ' + e.message);
+    }
+    return;
+  }
+
+  if (text.startsWith('/emotion')) {
+    const val = text.split(' ')[1];
+    if (val !== 'on' && val !== 'off') {
+      await sendMessage(chatId, 'Usage: /emotion on|off');
+      return;
+    }
+    showEmotionTags = val === 'on';
+    await sendMessage(chatId, `Emotion tags ${val === 'on' ? 'shown' : 'hidden'} in replies.`);
+    return;
+  }
+
+  if (text.startsWith('/memory')) {
+    const sub = text.split(' ')[1];
+    if (sub === 'stats') {
+      try {
+        const stats = await adminGet('/admin/memory/stats');
+        const lines = [
+          'Memory Stats',
+          '',
+          `Messages: ${stats.total_messages}`,
+          `Core memories: ${stats.core_memories}`,
+          `Session: ${stats.session}`,
+        ];
+        if (stats.core_memory_list && stats.core_memory_list.length > 0) {
+          lines.push('', 'Core memories:');
+          for (const m of stats.core_memory_list.slice(0, 10)) {
+            lines.push(`  [${m.category}] ${m.content}`);
+          }
+        }
+        await sendMessage(chatId, lines.join('\n'));
+      } catch (e) {
+        await sendMessage(chatId, 'Failed: ' + e.message);
+      }
+      return;
+    }
+    if (sub === 'clear') {
+      try {
+        const result = await adminPost('/admin/memory/clear', {});
+        await sendMessage(chatId, `Cleared ${result.cleared} messages. Core memories kept.`);
+      } catch (e) {
+        await sendMessage(chatId, 'Failed: ' + e.message);
+      }
+      return;
+    }
+    await sendMessage(chatId, 'Usage: /memory stats|clear');
     return;
   }
 
@@ -250,8 +563,8 @@ async function handleMessage(msg) {
     await sendMessage(chatId, '...');
 
     try {
-      const result = await avatarChat(question, msg.from.first_name || 'User');
-      const emotionTag = result.emotion ? `[${result.emotion}] ` : '';
+      const result = await avatarChat(question, 'Venomaru');
+      const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
       await sendMessage(chatId, emotionTag + result.reply);
       console.log(`[avatar] replied: [${result.emotion}] ${result.reply.slice(0, 80)}`);
     } catch (e) {
@@ -285,8 +598,8 @@ async function handleMessage(msg) {
   if (!text.startsWith('/')) {
     await sendMessage(chatId, '...');
     try {
-      const result = await avatarChat(text, msg.from.first_name || 'User');
-      const emotionTag = result.emotion ? `[${result.emotion}] ` : '';
+      const result = await avatarChat(text, 'Venomaru');
+      const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
       await sendMessage(chatId, emotionTag + result.reply);
       console.log(`[avatar] replied: [${result.emotion}] ${result.reply.slice(0, 80)}`);
     } catch (e) {
