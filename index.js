@@ -108,6 +108,12 @@ function sendMessage(chatId, text) {
   );
 }
 
+function sendSticker(chatId, fileId) {
+  return apiPost('sendSticker', { chat_id: chatId, sticker: fileId }).catch(e =>
+    console.error('[sendSticker error]', e.message)
+  );
+}
+
 function avatarChat(message, userName) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify({
@@ -348,6 +354,9 @@ function clockinPost(pathWithQuery) {
 // --- Emoji toggle for emotion tags in replies ---
 let showEmotionTags = true;
 
+// --- Sticker toggle ---
+let stickersEnabled = true;
+
 async function handleVoiceMessage(msg) {
   const chatId = msg.chat.id;
   const voice = msg.voice || msg.audio;
@@ -381,6 +390,9 @@ async function handleVoiceMessage(msg) {
     const result = await avatarChat(transcribed, 'Venomaru');
     const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
     await sendMessage(chatId, emotionTag + result.reply);
+    if (stickersEnabled && result.sticker_id && Math.random() < 0.5) {
+      await sendSticker(chatId, result.sticker_id);
+    }
     console.log(`[avatar] replied: [${result.emotion}] ${result.reply.slice(0, 80)}`);
   } catch (e) {
     console.error(`[voice] Error: ${e.message || e}`);
@@ -437,6 +449,7 @@ async function handleMessage(msg) {
       '  /tts on|off — toggle voice synthesis\n' +
       '  /sleep on|off — force sleep/wake\n' +
       '  /idle <hours> — idle talk interval\n' +
+      '  /sticker on|off — toggle stickers\n' +
       '  /emotion on|off — show emotion tags\n' +
       '  /memory stats|clear — memory management\n' +
       '  /clockin on|off|status — clock-in automation\n' +
@@ -481,6 +494,7 @@ async function handleMessage(msg) {
         `STT: ${cfg.stt_enabled ? 'on' : 'off'}`,
         `TTS: ${cfg.tts_enabled ? 'on' : 'off'}`,
         `Idle talk: ${cfg.idle_talk_hours}h`,
+        `Stickers: ${stickersEnabled ? 'on' : 'off'}`,
         `Emotion tags: ${showEmotionTags ? 'on' : 'off'}`,
         `Sleep: ${s.is_sleeping ? 'sleeping' : 'awake'} (${s.sleep_schedule})`,
         `Memory: ${m.total_messages} msgs, ${m.core_memories} core`,
@@ -550,6 +564,17 @@ async function handleMessage(msg) {
     } catch (e) {
       await sendMessage(chatId, 'Failed: ' + e.message);
     }
+    return;
+  }
+
+  if (text.startsWith('/sticker')) {
+    const val = text.split(' ')[1];
+    if (val !== 'on' && val !== 'off') {
+      await sendMessage(chatId, 'Usage: /sticker on|off');
+      return;
+    }
+    stickersEnabled = val === 'on';
+    await sendMessage(chatId, `Stickers ${val === 'on' ? 'enabled' : 'disabled'}.`);
     return;
   }
 
@@ -648,6 +673,9 @@ async function handleMessage(msg) {
       const result = await avatarChat(question, 'Venomaru');
       const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
       await sendMessage(chatId, emotionTag + result.reply);
+      if (stickersEnabled && result.sticker_id && Math.random() < 0.5) {
+        await sendSticker(chatId, result.sticker_id);
+      }
       console.log(`[avatar] replied: [${result.emotion}] ${result.reply.slice(0, 80)}`);
     } catch (e) {
       console.warn(`[avatar] AI server unreachable: ${e.message}`);
@@ -683,6 +711,9 @@ async function handleMessage(msg) {
       const result = await avatarChat(text, 'Venomaru');
       const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
       await sendMessage(chatId, emotionTag + result.reply);
+      if (stickersEnabled && result.sticker_id && Math.random() < 0.5) {
+        await sendSticker(chatId, result.sticker_id);
+      }
       console.log(`[avatar] replied: [${result.emotion}] ${result.reply.slice(0, 80)}`);
     } catch (e) {
       console.warn(`[avatar] AI server unreachable: ${e.message}`);
