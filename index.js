@@ -8,6 +8,7 @@ const TOKEN      = process.env.BOT_TOKEN;
 const ALLOWED_ID = Number(process.env.ALLOWED_ID);
 
 const AVATAR_SERVER_URL = process.env.AVATAR_SERVER_URL || 'http://100.83.33.113:8800';
+const CLOCKIN_SERVICE_URL = process.env.CLOCKIN_SERVICE_URL || 'http://localhost:8804';
 const AVATAR_TIMEOUT = 120000; // 120s (LLM + TTS + margin)
 
 const API_PORT = 3001;
@@ -304,6 +305,46 @@ function adminPost(path, body) {
   });
 }
 
+// --- Clock-in service helpers ---
+function clockinGet(path) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(CLOCKIN_SERVICE_URL + path);
+    const req = http.get({
+      hostname: url.hostname, port: url.port, path: url.pathname, timeout: 5000,
+    }, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(new Error('Invalid JSON')); }
+      });
+    });
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    req.on('error', reject);
+  });
+}
+
+function clockinPost(pathWithQuery) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(CLOCKIN_SERVICE_URL + pathWithQuery);
+    const req = http.request({
+      hostname: url.hostname, port: url.port, path: url.pathname + url.search,
+      method: 'POST', timeout: 30000,
+      headers: { 'Content-Type': 'application/json', 'Content-Length': 0 },
+    }, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(new Error('Invalid JSON')); }
+      });
+    });
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 // --- Emoji toggle for emotion tags in replies ---
 let showEmotionTags = true;
 
@@ -398,6 +439,7 @@ async function handleMessage(msg) {
       '  /idle <hours> — idle talk interval\n' +
       '  /emotion on|off — show emotion tags\n' +
       '  /memory stats|clear — memory management\n' +
+      '  /clockin on|off|status — clock-in automation\n' +
       '  /help — this message\n\n' +
       'Just type or send a voice message to chat!\n\n' +
       'Keyword Triggers (say naturally):\n' +
@@ -428,6 +470,11 @@ async function handleMessage(msg) {
       const cfg = await adminGet('/admin/config');
       const s = cfg.sleep || {};
       const m = cfg.memory || {};
+      let clockinStatus = 'unreachable';
+      try {
+        const ci = await clockinGet('/status');
+        clockinStatus = ci.enabled ? 'on' : 'off';
+      } catch (e) { /* service down */ }
       const lines = [
         'Current Settings',
         '',
@@ -437,6 +484,7 @@ async function handleMessage(msg) {
         `Emotion tags: ${showEmotionTags ? 'on' : 'off'}`,
         `Sleep: ${s.is_sleeping ? 'sleeping' : 'awake'} (${s.sleep_schedule})`,
         `Memory: ${m.total_messages} msgs, ${m.core_memories} core`,
+        `Clock-in auto: ${clockinStatus}`,
       ];
       await sendMessage(chatId, lines.join('\n'));
     } catch (e) {
@@ -550,6 +598,40 @@ async function handleMessage(msg) {
       return;
     }
     await sendMessage(chatId, 'Usage: /memory stats|clear');
+    return;
+  }
+
+  if (text.startsWith('/clockin')) {
+    const sub = text.split(' ')[1];
+    if (sub === 'on' || sub === 'off') {
+      try {
+        await clockinPost(`/toggle?enabled=${sub === 'on'}`);
+        await sendMessage(chatId, `Clock-in automation ${sub === 'on' ? 'enabled' : 'disabled'}.`);
+      } catch (e) {
+        await sendMessage(chatId, 'Clock-in service unreachable: ' + e.message);
+      }
+      return;
+    }
+    if (!sub || sub === 'status') {
+      try {
+        const st = await clockinGet('/status');
+        const t = st.today || {};
+        const lines = [
+          `Clock-in Automation: ${st.enabled ? 'ON' : 'OFF'}`,
+          `Time: ${st.now}`,
+          '',
+          `Today (${t.date || 'N/A'}):`,
+          `  Scheduled: ${t.scheduled_clockin || '-'}`,
+          `  Clock-in: ${t.clockin_done ? t.clockin_time : 'pending'}`,
+          `  Clock-out: ${t.clockout_done ? 'done' : (t.clockout_time || 'pending')}`,
+        ];
+        await sendMessage(chatId, lines.join('\n'));
+      } catch (e) {
+        await sendMessage(chatId, 'Clock-in service unreachable: ' + e.message);
+      }
+      return;
+    }
+    await sendMessage(chatId, 'Usage: /clockin on|off|status');
     return;
   }
 
