@@ -390,7 +390,7 @@ async function handleVoiceMessage(msg) {
     const result = await avatarChat(transcribed, 'Venomaru');
     const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
     await sendMessage(chatId, emotionTag + result.reply);
-    if (stickersEnabled && result.sticker_id && Math.random() < 0.5) {
+    if (stickersEnabled && result.sticker_id && Math.random() < 0.75) {
       await sendSticker(chatId, result.sticker_id);
     }
     console.log(`[avatar] replied: [${result.emotion}] ${result.reply.slice(0, 80)}`);
@@ -673,7 +673,7 @@ async function handleMessage(msg) {
       const result = await avatarChat(question, 'Venomaru');
       const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
       await sendMessage(chatId, emotionTag + result.reply);
-      if (stickersEnabled && result.sticker_id && Math.random() < 0.5) {
+      if (stickersEnabled && result.sticker_id && Math.random() < 0.75) {
         await sendSticker(chatId, result.sticker_id);
       }
       console.log(`[avatar] replied: [${result.emotion}] ${result.reply.slice(0, 80)}`);
@@ -711,7 +711,7 @@ async function handleMessage(msg) {
       const result = await avatarChat(text, 'Venomaru');
       const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
       await sendMessage(chatId, emotionTag + result.reply);
-      if (stickersEnabled && result.sticker_id && Math.random() < 0.5) {
+      if (stickersEnabled && result.sticker_id && Math.random() < 0.75) {
         await sendSticker(chatId, result.sticker_id);
       }
       console.log(`[avatar] replied: [${result.emotion}] ${result.reply.slice(0, 80)}`);
