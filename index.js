@@ -7,7 +7,7 @@ const http  = require('http');
 const TOKEN      = process.env.BOT_TOKEN;
 const ALLOWED_ID = Number(process.env.ALLOWED_ID);
 
-const AVATAR_SERVER_URL = process.env.AVATAR_SERVER_URL || 'http://100.83.33.113:8800';
+const AVATAR_SERVER_URL = process.env.AVATAR_SERVER_URL || 'http://localhost:8800';
 const CLOCKIN_SERVICE_URL = process.env.CLOCKIN_SERVICE_URL || 'http://localhost:8804';
 const AVATAR_TIMEOUT = 120000; // 120s (LLM + TTS + margin)
 
