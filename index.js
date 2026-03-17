@@ -421,26 +421,35 @@ async function handleMessage(msg) {
     return handleVoiceMessage(msg);
   }
 
-  // Handle sticker messages — send to LLM as *sticker* reaction
+  // Handle sticker messages — lightweight: emoji → emotion → send sticker back (no LLM/TTS)
   if (msg.sticker) {
     if (msg.from.id !== ALLOWED_ID) return;
+    if (!stickersEnabled) return;
     messageCount++;
     lastMessageTime = Date.now();
     lastMessageFrom = msg.from.first_name || msg.from.username || String(msg.from.id);
     lastMessageText = '(sticker)';
     const emoji = msg.sticker.emoji || '';
-    const setName = msg.sticker.set_name || '';
+    const emojiToEmotion = {
+      '😀': 'HAPPY', '😁': 'HAPPY', '😂': 'HAPPY', '🤣': 'HAPPY', '😊': 'HAPPY',
+      '😄': 'HAPPY', '😆': 'HAPPY', '🥰': 'HAPPY', '😍': 'HAPPY', '🎉': 'HAPPY',
+      '👍': 'HAPPY', '❤️': 'HAPPY', '💕': 'HAPPY', '✨': 'HAPPY', '🌟': 'HAPPY',
+      '😢': 'SAD', '😭': 'SAD', '🥺': 'SAD', '😞': 'SAD', '😔': 'SAD', '💔': 'SAD',
+      '😠': 'ANGRY', '😡': 'ANGRY', '🤬': 'ANGRY', '💢': 'ANGRY', '👊': 'ANGRY',
+      '😮': 'SURPRISED', '😱': 'SURPRISED', '🤯': 'SURPRISED', '😲': 'SURPRISED', '❗': 'SURPRISED',
+      '🤔': 'THINKING', '🧐': 'THINKING', '💭': 'THINKING', '❓': 'THINKING',
+    };
+    const emotion = emojiToEmotion[emoji] || ['HAPPY', 'ANGRY', 'SURPRISED'][Math.floor(Math.random() * 3)];
     try {
-      const result = await avatarChat(
-        `[SYSTEM: User sent a sticker ${emoji ? '(emoji: ' + emoji + ')' : ''} from pack "${setName}". React naturally — maybe send one back!] *sends sticker*`,
-        'Venomaru'
-      );
-      // Sticker reply only — no text, just sticker back
-      if (stickersEnabled && result.sticker_id) {
-        await sendSticker(chatId, result.sticker_id);
+      const stickers = await adminGet('/stickers');
+      const matches = stickers.filter(s => s.emotion === emotion && s.file_id);
+      if (matches.length > 0) {
+        const pick = matches[Math.floor(Math.random() * matches.length)];
+        await sendSticker(chatId, pick.file_id);
+        console.log(`[sticker] ${emoji} → ${emotion} → sent sticker back`);
       }
     } catch (e) {
-      console.warn(`[sticker] AI server unreachable: ${e.message}`);
+      console.warn(`[sticker] Failed to fetch stickers: ${e.message}`);
     }
     return;
   }
