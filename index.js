@@ -441,32 +441,33 @@ async function handleMessage(msg) {
   if (text === '/start' || text === '/help') {
     await sendMessage(chatId,
       'Suisei Bot\n\n' +
-      'Commands:\n' +
-      '  /ping — test bot\n' +
-      '  /avatar — server status\n' +
-      '  /settings — current config\n' +
-      '  /stt on|off — toggle voice recognition\n' +
-      '  /tts on|off — toggle voice synthesis\n' +
-      '  /sleep on|off — force sleep/wake\n' +
-      '  /idle <hours> — idle talk interval\n' +
-      '  /sticker on|off — toggle stickers\n' +
-      '  /emotion on|off — show emotion tags\n' +
-      '  /memory stats|clear — memory management\n' +
-      '  /clockin on|off|status — clock-in automation\n' +
-      '  /help — this message\n\n' +
-      'Just type or send a voice message to chat!\n\n' +
-      'Keyword Triggers (say naturally):\n' +
-      '  Expenses: "spent 20000 on food"\n' +
-      '  Income: "got paid 5000000"\n' +
-      '  Balance: "check my balance"\n' +
-      '  Tasks: "remind me to buy groceries"\n' +
-      '  Complete: "done with laundry"\n' +
-      '  Weather: "how\'s the weather"\n' +
-      '  Calendar: "what\'s on my schedule"\n' +
-      '  Costume: "change to casual outfit"\n' +
-      '  Memory: "note this: ..." or "remember ..."\n' +
-      '  Calories: "ate nasi goreng for lunch"\n' +
-      '  Check: "how many calories today"'
+      '--- Commands ---\n' +
+      '/ping — test bot\n' +
+      '/avatar — server status\n' +
+      '/settings — current config\n' +
+      '/set <key> <value> — change setting\n' +
+      '/stt on|off — voice recognition\n' +
+      '/tts on|off — voice synthesis\n' +
+      '/sleep on|off — force sleep/wake\n' +
+      '/idle <hours> — idle talk interval\n' +
+      '/sticker on|off — toggle stickers\n' +
+      '/emotion on|off — emotion tags\n' +
+      '/touch on|off — touch interaction\n' +
+      '/memory stats|clear — memory\n' +
+      '/clockin on|off|status — clock-in\n' +
+      '/help — this message\n\n' +
+      '--- Keyword Triggers ---\n' +
+      '"spent 20k on food" — log expense\n' +
+      '"got paid 5000000" — log income\n' +
+      '"check my balance" — view balance\n' +
+      '"remind me to ..." — add task\n' +
+      '"done with ..." — complete task\n' +
+      '"how\'s the weather" — weather\n' +
+      '"what\'s on my schedule" — calendar\n' +
+      '"change to casual" — costume\n' +
+      '"remember this: ..." — save memory\n' +
+      '"ate nasi goreng" — log calories\n' +
+      '"how many calories" — check calories'
     );
     return;
   }
@@ -488,14 +489,19 @@ async function handleMessage(msg) {
         const ci = await clockinGet('/status');
         clockinStatus = ci.enabled ? 'on' : 'off';
       } catch (e) { /* service down */ }
+      const stickerPct = Math.round((cfg.sticker_chance || 0) * 100);
+      const idleToolPct = Math.round((cfg.idle_tool_chance || 0) * 100);
       const lines = [
         'Current Settings',
         '',
         `STT: ${cfg.stt_enabled ? 'on' : 'off'}`,
         `TTS: ${cfg.tts_enabled ? 'on' : 'off'}`,
         `Idle talk: ${cfg.idle_talk_hours}h`,
+        `Sticker chance: ${stickerPct}%`,
+        `Idle tool chance: ${idleToolPct}%`,
         `Stickers: ${stickersEnabled ? 'on' : 'off'}`,
         `Emotion tags: ${showEmotionTags ? 'on' : 'off'}`,
+        `Touch: ${cfg.touch_enabled ? 'on' : 'off'}`,
         `Sleep: ${s.is_sleeping ? 'sleeping' : 'awake'} (${s.sleep_schedule})`,
         `Memory: ${m.total_messages} msgs, ${m.core_memories} core`,
         `Clock-in auto: ${clockinStatus}`,
@@ -575,6 +581,53 @@ async function handleMessage(msg) {
     }
     stickersEnabled = val === 'on';
     await sendMessage(chatId, `Stickers ${val === 'on' ? 'enabled' : 'disabled'}.`);
+    return;
+  }
+
+  if (text.startsWith('/touch')) {
+    const val = text.split(' ')[1];
+    if (val !== 'on' && val !== 'off') {
+      await sendMessage(chatId, 'Usage: /touch on|off');
+      return;
+    }
+    try {
+      await adminPost('/admin/config', { touch_enabled: val === 'on' });
+      await sendMessage(chatId, `Touch interaction ${val === 'on' ? 'enabled' : 'disabled'}.`);
+    } catch (e) {
+      await sendMessage(chatId, 'Failed: ' + e.message);
+    }
+    return;
+  }
+
+  if (text.startsWith('/set')) {
+    const parts = text.split(/\s+/);
+    const key = parts[1];
+    const rawVal = parts[2];
+    const validKeys = {
+      sticker_chance: { min: 0, max: 1, desc: '0-1' },
+      idle_tool_chance: { min: 0, max: 1, desc: '0-1' },
+      sleep_hour: { min: 0, max: 23, desc: '0-23' },
+      wake_hour: { min: 0, max: 23, desc: '0-23' },
+    };
+    if (!key || !rawVal || !validKeys[key]) {
+      const keys = Object.entries(validKeys).map(([k, v]) => `  ${k} (${v.desc})`).join('\n');
+      await sendMessage(chatId, `Usage: /set <key> <value>\n\nValid keys:\n${keys}`);
+      return;
+    }
+    const val = parseFloat(rawVal);
+    const range = validKeys[key];
+    if (isNaN(val) || val < range.min || val > range.max) {
+      await sendMessage(chatId, `${key} must be ${range.desc}`);
+      return;
+    }
+    try {
+      await adminPost('/admin/config', { [key]: val });
+      const display = (key === 'sticker_chance' || key === 'idle_tool_chance')
+        ? `${Math.round(val * 100)}%` : String(val);
+      await sendMessage(chatId, `${key} set to ${display}.`);
+    } catch (e) {
+      await sendMessage(chatId, 'Failed: ' + e.message);
+    }
     return;
   }
 
