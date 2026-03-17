@@ -421,6 +421,31 @@ async function handleMessage(msg) {
     return handleVoiceMessage(msg);
   }
 
+  // Handle sticker messages — send to LLM as *sticker* reaction
+  if (msg.sticker) {
+    if (msg.from.id !== ALLOWED_ID) return;
+    messageCount++;
+    lastMessageTime = Date.now();
+    lastMessageFrom = msg.from.first_name || msg.from.username || String(msg.from.id);
+    lastMessageText = '(sticker)';
+    const emoji = msg.sticker.emoji || '';
+    const setName = msg.sticker.set_name || '';
+    try {
+      const result = await avatarChat(
+        `[SYSTEM: User sent a sticker ${emoji ? '(emoji: ' + emoji + ')' : ''} from pack "${setName}". React naturally — maybe send one back!] *sends sticker*`,
+        'Venomaru'
+      );
+      const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
+      if (result.reply) await sendMessage(chatId, emotionTag + result.reply);
+      if (stickersEnabled && result.sticker_id) {
+        await sendSticker(chatId, result.sticker_id);
+      }
+    } catch (e) {
+      console.warn(`[sticker] AI server unreachable: ${e.message}`);
+    }
+    return;
+  }
+
   const text = (msg.text || '').trim();
 
   if (!text) return;
