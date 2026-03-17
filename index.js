@@ -435,8 +435,7 @@ async function handleMessage(msg) {
         `[SYSTEM: User sent a sticker ${emoji ? '(emoji: ' + emoji + ')' : ''} from pack "${setName}". React naturally — maybe send one back!] *sends sticker*`,
         'Venomaru'
       );
-      const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
-      if (result.reply) await sendMessage(chatId, emotionTag + result.reply);
+      // Sticker reply only — no text, just sticker back
       if (stickersEnabled && result.sticker_id) {
         await sendSticker(chatId, result.sticker_id);
       }
