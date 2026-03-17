@@ -453,6 +453,7 @@ async function handleMessage(msg) {
       '/sticker on|off — toggle stickers\n' +
       '/emotion on|off — emotion tags\n' +
       '/touch on|off — touch interaction\n' +
+      '/mood <0-100> — set mood value\n' +
       '/memory stats|clear — memory\n' +
       '/clockin on|off|status — clock-in\n' +
       '/help — this message\n\n' +
@@ -625,6 +626,21 @@ async function handleMessage(msg) {
       const display = (key === 'sticker_chance' || key === 'idle_tool_chance')
         ? `${Math.round(val * 100)}%` : String(val);
       await sendMessage(chatId, `${key} set to ${display}.`);
+    } catch (e) {
+      await sendMessage(chatId, 'Failed: ' + e.message);
+    }
+    return;
+  }
+
+  if (text.startsWith('/mood')) {
+    const val = parseInt(text.split(' ')[1]);
+    if (isNaN(val) || val < 0 || val > 100) {
+      await sendMessage(chatId, 'Usage: /mood <0-100>');
+      return;
+    }
+    try {
+      const result = await avatarChat(`/mood ${val}`, 'Venomaru');
+      await sendMessage(chatId, result.reply);
     } catch (e) {
       await sendMessage(chatId, 'Failed: ' + e.message);
     }
