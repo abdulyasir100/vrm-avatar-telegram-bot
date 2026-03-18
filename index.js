@@ -704,9 +704,9 @@ async function handleMessage(msg) {
           `Session: ${stats.session}`,
         ];
         if (stats.core_memory_list && stats.core_memory_list.length > 0) {
-          lines.push('', 'Core memories:');
-          for (const m of stats.core_memory_list.slice(0, 10)) {
-            lines.push(`  [${m.category}] ${m.content}`);
+          lines.push('', `Core memories (${stats.core_memories} total):`);
+          for (const m of stats.core_memory_list) {
+            lines.push(`  #${m.id} [${m.category}] ${m.content}`);
           }
         }
         await sendMessage(chatId, lines.join('\n'));
@@ -724,7 +724,40 @@ async function handleMessage(msg) {
       }
       return;
     }
-    await sendMessage(chatId, 'Usage: /memory stats|clear');
+    if (sub === 'forget') {
+      const arg = text.split(' ').slice(2).join(' ').trim();
+      if (!arg) {
+        await sendMessage(chatId, 'Usage: /memory forget <id or keyword>\nExamples:\n  /memory forget 5\n  /memory forget boyfriend');
+        return;
+      }
+      try {
+        // If arg is a number, delete by ID
+        if (/^\d+$/.test(arg)) {
+          const result = await adminPost('/admin/memory/delete', { id: parseInt(arg) });
+          if (result.ok) {
+            await sendMessage(chatId, `Deleted memory #${arg}.`);
+          } else {
+            await sendMessage(chatId, result.error || 'Memory not found.');
+          }
+        } else {
+          // Search and delete by keyword
+          const result = await adminPost('/admin/memory/search-delete', { query: arg });
+          if (result.deleted_count === 0) {
+            await sendMessage(chatId, `No memories found matching "${arg}".`);
+          } else {
+            const lines = [`Deleted ${result.deleted_count} memor${result.deleted_count === 1 ? 'y' : 'ies'}:`];
+            for (const m of result.deleted) {
+              lines.push(`  #${m.id}: ${m.content}`);
+            }
+            await sendMessage(chatId, lines.join('\n'));
+          }
+        }
+      } catch (e) {
+        await sendMessage(chatId, 'Failed: ' + e.message);
+      }
+      return;
+    }
+    await sendMessage(chatId, 'Usage: /memory stats|clear|forget <id or keyword>');
     return;
   }
 
