@@ -9,7 +9,7 @@ const ALLOWED_ID = Number(process.env.ALLOWED_ID);
 
 const AVATAR_SERVER_URL = process.env.AVATAR_SERVER_URL || 'http://localhost:8800';
 const CLOCKIN_SERVICE_URL = process.env.CLOCKIN_SERVICE_URL || 'http://localhost:8804';
-const AVATAR_TIMEOUT = 120000; // 120s (LLM + TTS + margin)
+const AVATAR_TIMEOUT = 360000; // 360s (code mode uses Opus, can take ~5min)
 
 const API_PORT = 3001;
 
