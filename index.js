@@ -114,13 +114,17 @@ function sendSticker(chatId, fileId) {
   );
 }
 
-function avatarChat(message, userName) {
+function avatarChat(message, userName, image_base64 = null) {
   return new Promise((resolve, reject) => {
-    const payload = JSON.stringify({
+    const body = {
       message,
       context: 'telegram',
       user_name: userName,
-    });
+    };
+    if (image_base64) {
+      body.image_base64 = image_base64;
+    }
+    const payload = JSON.stringify(body);
 
     const url = new URL(AVATAR_SERVER_URL + '/chat');
 
@@ -419,6 +423,42 @@ async function handleMessage(msg) {
     lastMessageFrom = msg.from.first_name || msg.from.username || String(msg.from.id);
     lastMessageText = '(voice message)';
     return handleVoiceMessage(msg);
+  }
+
+  // Handle photo messages — download, base64, send to avatar-server with caption
+  if (msg.photo) {
+    if (msg.from.id !== ALLOWED_ID) {
+      await sendMessage(chatId, 'Unauthorized.');
+      return;
+    }
+    messageCount++;
+    lastMessageTime = Date.now();
+    lastMessageFrom = msg.from.first_name || msg.from.username || String(msg.from.id);
+    lastMessageText = msg.caption ? msg.caption.slice(0, 100) : '(photo)';
+
+    await sendMessage(chatId, '...');
+
+    try {
+      // Pick largest photo size (last in array)
+      const photoSize = msg.photo[msg.photo.length - 1];
+      const photoBuffer = await downloadTelegramFile(photoSize.file_id);
+      console.log(`[photo] Downloaded ${photoBuffer.length} bytes`);
+
+      const base64 = photoBuffer.toString('base64');
+      const caption = msg.caption || '[User sent an image]';
+
+      const result = await avatarChat(caption, 'Venomaru', base64);
+      const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
+      await sendMessage(chatId, emotionTag + result.reply);
+      if (stickersEnabled && result.sticker_id && Math.random() < 0.75) {
+        await sendSticker(chatId, result.sticker_id);
+      }
+      console.log(`[avatar] replied: [${result.emotion}] ${result.reply.slice(0, 80)}`);
+    } catch (e) {
+      console.error(`[photo] Error: ${e.message || e}`);
+      await sendMessage(chatId, 'Failed to process image. Try again.');
+    }
+    return;
   }
 
   // Handle sticker messages — lightweight: emoji → emotion → send sticker back (no LLM/TTS)
