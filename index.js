@@ -9,6 +9,7 @@ const ALLOWED_ID = Number(process.env.ALLOWED_ID);
 
 const AVATAR_SERVER_URL = process.env.AVATAR_SERVER_URL || 'http://localhost:8800';
 const CLOCKIN_SERVICE_URL = process.env.CLOCKIN_SERVICE_URL || 'http://localhost:8804';
+const MEME_SERVICE_URL = process.env.MEME_SERVICE_URL || 'http://localhost:8807';
 const AVATAR_TIMEOUT = 360000; // 360s (code mode uses Opus, can take ~5min)
 
 const API_PORT = 3001;
@@ -355,6 +356,46 @@ function clockinPost(pathWithQuery) {
   });
 }
 
+// --- Meme service helpers ---
+function memeGet(path) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(MEME_SERVICE_URL + path);
+    const req = http.get({
+      hostname: url.hostname, port: url.port, path: url.pathname + url.search, timeout: 5000,
+    }, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(new Error('Invalid JSON')); }
+      });
+    });
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    req.on('error', reject);
+  });
+}
+
+function memePost(pathWithQuery) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(MEME_SERVICE_URL + pathWithQuery);
+    const req = http.request({
+      hostname: url.hostname, port: url.port, path: url.pathname + url.search,
+      method: 'POST', timeout: 5000,
+      headers: { 'Content-Type': 'application/json', 'Content-Length': 0 },
+    }, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(new Error('Invalid JSON')); }
+      });
+    });
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 // --- Emoji toggle for emotion tags in replies ---
 let showEmotionTags = true;
 
@@ -529,6 +570,7 @@ async function handleMessage(msg) {
       '/mood <0-100> — set mood value\n' +
       '/memory stats|clear — memory\n' +
       '/clockin on|off|status — clock-in\n' +
+      '/meme on|off|status — political memes\n' +
       '/help — this message\n\n' +
       '--- Keyword Triggers ---\n' +
       '"spent 20k on food" — log expense\n' +
@@ -832,6 +874,30 @@ async function handleMessage(msg) {
       return;
     }
     await sendMessage(chatId, 'Usage: /clockin on|off|status');
+    return;
+  }
+
+  if (text.startsWith('/meme')) {
+    const sub = text.split(' ')[1];
+    if (sub === 'on' || sub === 'off') {
+      try {
+        await memePost(`/toggle?enabled=${sub === 'on'}`);
+        await sendMessage(chatId, `Political memes ${sub === 'on' ? 'enabled' : 'disabled'}.`);
+      } catch (e) {
+        await sendMessage(chatId, 'Meme service unreachable: ' + e.message);
+      }
+      return;
+    }
+    if (!sub || sub === 'status') {
+      try {
+        const st = await memeGet('/status');
+        await sendMessage(chatId, `Meme service: ${st.enabled ? 'ON' : 'OFF'}\nFigures: ${st.figures}\nTotal memes: ${st.total_memes}`);
+      } catch (e) {
+        await sendMessage(chatId, 'Meme service unreachable: ' + e.message);
+      }
+      return;
+    }
+    await sendMessage(chatId, 'Usage: /meme on|off|status');
     return;
   }
 
