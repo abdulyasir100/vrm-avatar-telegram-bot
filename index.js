@@ -555,35 +555,75 @@ async function handleMessage(msg) {
   if (text === '/start' || text === '/help') {
     await sendMessage(chatId,
       'Suisei Bot\n\n' +
-      '--- Commands ---\n' +
+      '--- System ---\n' +
       '/ping — test bot\n' +
       '/avatar — server status\n' +
       '/settings — current config\n' +
       '/set <key> <value> — change setting\n' +
+      '\n--- Toggles ---\n' +
       '/stt on|off — voice recognition\n' +
       '/tts on|off — voice synthesis\n' +
       '/sleep on|off — force sleep/wake\n' +
-      '/idle <hours> — idle talk interval\n' +
       '/sticker on|off — toggle stickers\n' +
       '/emotion on|off — emotion tags\n' +
       '/touch on|off — touch interaction\n' +
+      '/meme on|off|status — political memes\n' +
+      '\n--- Settings ---\n' +
+      '/idle <hours> — idle talk interval\n' +
       '/mood <0-100> — set mood value\n' +
+      '/stepgoal <number> — daily step goal\n' +
       '/memory stats|clear — memory\n' +
       '/clockin on|off|status — clock-in\n' +
-      '/meme on|off|status — political memes\n' +
-      '/help — this message\n\n' +
-      '--- Keyword Triggers ---\n' +
-      '"spent 20k on food" — log expense\n' +
-      '"got paid 5000000" — log income\n' +
-      '"check my balance" — view balance\n' +
-      '"remind me to ..." — add task\n' +
-      '"done with ..." — complete task\n' +
-      '"how\'s the weather" — weather\n' +
-      '"what\'s on my schedule" — calendar\n' +
-      '"change to casual" — costume\n' +
-      '"remember this: ..." — save memory\n' +
-      '"ate nasi goreng" — log calories\n' +
-      '"how many calories" — check calories'
+      '\n/guide — how to trigger Suisei\'s tools\n' +
+      '/help — this message'
+    );
+    return;
+  }
+
+  if (text === '/guide') {
+    await sendMessage(chatId,
+      'Suisei Tool Guide\n\n' +
+      'Just talk naturally — Suisei detects keywords and uses the right tool.\n\n' +
+      '--- Money ---\n' +
+      '"spent 20k on food" → log expense\n' +
+      '"bought boba for 25k" → log expense\n' +
+      '"got paid 5000000" → log income\n' +
+      '"check my balance" → view budget\n' +
+      '\n--- Tasks ---\n' +
+      '"remind me to buy milk" → add task\n' +
+      '"add task: clean room" → add task\n' +
+      '"show my tasks" → list tasks\n' +
+      '"done with buy milk" → complete task\n' +
+      '\n--- Food & Calories ---\n' +
+      '"ate nasi goreng" → log meal\n' +
+      '"had 2 slices of pizza" → log meal\n' +
+      '"how many calories today" → check intake\n' +
+      '\n--- Weather ---\n' +
+      '"how\'s the weather" → forecast\n' +
+      '"is it gonna rain?" → forecast\n' +
+      '\n--- Calendar ---\n' +
+      '"what\'s on my schedule" → events\n' +
+      '"any meetings today?" → events\n' +
+      '\n--- Costume ---\n' +
+      '"change to casual" → swap VRM\n' +
+      '"wear the maid outfit" → swap VRM\n' +
+      '\n--- Memory ---\n' +
+      '"remember that I like sushi" → save\n' +
+      '"forget about the sushi thing" → delete\n' +
+      '\n--- Anime ---\n' +
+      '"find me frieren episode 9" → stream link\n' +
+      '"where to watch dandadan" → search\n' +
+      'Say "anime" + title, or use known titles\n' +
+      '\n--- Screen Time & Steps ---\n' +
+      '"how\'s my screen time" → app usage\n' +
+      '"how many steps today" → step count\n' +
+      '\n--- Entertainment ---\n' +
+      '"open gacha" / "pull" → gacha\n' +
+      '"spin roulette" → roulette wheel\n' +
+      '"give THR" / "angpao" → THR envelopes\n' +
+      '\n--- Political Memes ---\n' +
+      'Mention any Indonesian politician name\n' +
+      '(jokowi, prabowo, gibran, etc.)'
     );
     return;
   }
@@ -898,6 +938,31 @@ async function handleMessage(msg) {
       return;
     }
     await sendMessage(chatId, 'Usage: /meme on|off|status');
+    return;
+  }
+
+  if (text.startsWith('/stepgoal')) {
+    const arg = text.split(' ')[1];
+    if (arg && !isNaN(arg)) {
+      const goal = parseInt(arg);
+      if (goal < 100 || goal > 100000) {
+        await sendMessage(chatId, 'Step goal must be between 100 and 100,000.');
+        return;
+      }
+      try {
+        await adminPost('/sensor/step-goal', { goal });
+        await sendMessage(chatId, `Step goal set to ${goal.toLocaleString()} steps.`);
+      } catch (e) {
+        await sendMessage(chatId, 'Failed to set step goal: ' + e.message);
+      }
+    } else {
+      try {
+        const data = await adminGet('/sensor/step-goal');
+        await sendMessage(chatId, `Current step goal: ${Number(data.step_goal).toLocaleString()} steps.\n\nUsage: /stepgoal <number>`);
+      } catch (e) {
+        await sendMessage(chatId, 'Failed to get step goal: ' + e.message);
+      }
+    }
     return;
   }
 
