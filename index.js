@@ -637,7 +637,7 @@ async function handleMessage(msg) {
 
   if (text === '/settings') {
     try {
-      const cfg = await adminGet('/config');
+      const cfg = await adminGet('/admin/config');
       const s = cfg.sleep || {};
       const m = cfg.memory || {};
       let clockinStatus = 'unreachable';
@@ -676,7 +676,7 @@ async function handleMessage(msg) {
       return;
     }
     try {
-      await adminPost('/config', { stt_enabled: val === 'on' });
+      await adminPost('/admin/config', { stt_enabled: val === 'on' });
       await sendMessage(chatId, `STT ${val === 'on' ? 'enabled' : 'disabled'}.`);
     } catch (e) {
       await sendMessage(chatId, 'Failed: ' + e.message);
@@ -691,7 +691,7 @@ async function handleMessage(msg) {
       return;
     }
     try {
-      await adminPost('/config', { tts_enabled: val === 'on' });
+      await adminPost('/admin/config', { tts_enabled: val === 'on' });
       await sendMessage(chatId, `TTS ${val === 'on' ? 'enabled' : 'disabled'}.`);
     } catch (e) {
       await sendMessage(chatId, 'Failed: ' + e.message);
@@ -706,7 +706,7 @@ async function handleMessage(msg) {
       return;
     }
     try {
-      await adminPost('/config', { sleep_force: val });
+      await adminPost('/admin/config', { sleep_force: val });
       await sendMessage(chatId, val === 'on' ? 'Suisei is now sleeping.' : 'Suisei woke up.');
     } catch (e) {
       await sendMessage(chatId, 'Failed: ' + e.message);
@@ -721,7 +721,7 @@ async function handleMessage(msg) {
       return;
     }
     try {
-      await adminPost('/config', { idle_talk_hours: val });
+      await adminPost('/admin/config', { idle_talk_hours: val });
       await sendMessage(chatId, `Idle talk interval set to ${val}h.`);
     } catch (e) {
       await sendMessage(chatId, 'Failed: ' + e.message);
@@ -747,7 +747,7 @@ async function handleMessage(msg) {
       return;
     }
     try {
-      await adminPost('/config', { touch_enabled: val === 'on' });
+      await adminPost('/admin/config', { touch_enabled: val === 'on' });
       await sendMessage(chatId, `Touch interaction ${val === 'on' ? 'enabled' : 'disabled'}.`);
     } catch (e) {
       await sendMessage(chatId, 'Failed: ' + e.message);
@@ -777,7 +777,7 @@ async function handleMessage(msg) {
       return;
     }
     try {
-      await adminPost('/config', { [key]: val });
+      await adminPost('/admin/config', { [key]: val });
       const display = (key === 'sticker_chance' || key === 'idle_tool_chance')
         ? `${Math.round(val * 100)}%` : String(val);
       await sendMessage(chatId, `${key} set to ${display}.`);
@@ -817,7 +817,7 @@ async function handleMessage(msg) {
     const sub = text.split(' ')[1];
     if (sub === 'stats') {
       try {
-        const stats = await adminGet('/memory/stats');
+        const stats = await adminGet('/admin/memory/stats');
         const lines = [
           'Memory Stats',
           '',
@@ -839,7 +839,7 @@ async function handleMessage(msg) {
     }
     if (sub === 'clear') {
       try {
-        const result = await adminPost('/memory/clear', {});
+        const result = await adminPost('/admin/memory/clear', {});
         await sendMessage(chatId, `Cleared ${result.cleared} messages. Core memories kept.`);
       } catch (e) {
         await sendMessage(chatId, 'Failed: ' + e.message);
@@ -855,7 +855,7 @@ async function handleMessage(msg) {
       try {
         // If arg is a number, delete by ID
         if (/^\d+$/.test(arg)) {
-          const result = await adminPost('/memory/delete', { id: parseInt(arg) });
+          const result = await adminPost('/admin/memory/delete', { id: parseInt(arg) });
           if (result.ok) {
             await sendMessage(chatId, `Deleted memory #${arg}.`);
           } else {
@@ -863,7 +863,7 @@ async function handleMessage(msg) {
           }
         } else {
           // Search and delete by keyword
-          const result = await adminPost('/memory/search-delete', { query: arg });
+          const result = await adminPost('/admin/memory/search-delete', { query: arg });
           if (result.deleted_count === 0) {
             await sendMessage(chatId, `No memories found matching "${arg}".`);
           } else {
