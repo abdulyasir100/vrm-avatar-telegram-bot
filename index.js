@@ -109,6 +109,34 @@ function sendMessage(chatId, text) {
   );
 }
 
+function sendMessageWithKeyboard(chatId, text, inlineKeyboard) {
+  const body = { chat_id: chatId, text };
+  if (inlineKeyboard && inlineKeyboard.length > 0) {
+    body.reply_markup = JSON.stringify({ inline_keyboard: inlineKeyboard });
+  }
+  return apiPost('sendMessage', body).catch(e =>
+    console.error('[sendMessageWithKeyboard error]', e.message)
+  );
+}
+
+function editMessageText(chatId, messageId, text, inlineKeyboard) {
+  const body = { chat_id: chatId, message_id: messageId, text };
+  if (inlineKeyboard && inlineKeyboard.length > 0) {
+    body.reply_markup = JSON.stringify({ inline_keyboard: inlineKeyboard });
+  } else {
+    body.reply_markup = JSON.stringify({ inline_keyboard: [] });
+  }
+  return apiPost('editMessageText', body).catch(e =>
+    console.error('[editMessageText error]', e.message)
+  );
+}
+
+function answerCallbackQuery(callbackQueryId, text) {
+  return apiPost('answerCallbackQuery', { callback_query_id: callbackQueryId, text }).catch(e =>
+    console.error('[answerCallbackQuery error]', e.message)
+  );
+}
+
 function sendSticker(chatId, fileId) {
   return apiPost('sendSticker', { chat_id: chatId, sticker: fileId }).catch(e =>
     console.error('[sendSticker error]', e.message)
@@ -553,7 +581,7 @@ async function handleMessage(msg) {
   }
 
   if (text === '/start' || text === '/help') {
-    await sendMessage(chatId,
+    let helpText =
       'Suisei Bot\n\n' +
       '--- System ---\n' +
       '/ping — test bot\n' +
@@ -561,22 +589,31 @@ async function handleMessage(msg) {
       '/settings — current config\n' +
       '/set <key> <value> — change setting\n' +
       '\n--- Toggles ---\n' +
-      '/stt on|off — voice recognition\n' +
-      '/tts on|off — voice synthesis\n' +
-      '/sleep on|off — force sleep/wake\n' +
-      '/sticker on|off — toggle stickers\n' +
-      '/emotion on|off — emotion tags\n' +
-      '/touch on|off — touch interaction\n' +
-      '/meme on|off|status — political memes\n' +
+      '/stt, /tts, /sleep, /sticker, /emotion, /touch, /meme — on|off\n' +
       '\n--- Settings ---\n' +
       '/idle <hours> — idle talk interval\n' +
       '/mood <0-100> — set mood value\n' +
       '/stepgoal <number> — daily step goal\n' +
       '/memory stats|clear — memory\n' +
-      '/clockin on|off|status — clock-in\n' +
-      '\n/guide — how to trigger Suisei\'s tools\n' +
-      '/help — this message'
-    );
+      '/clockin on|off|status — clock-in\n';
+
+    // Dynamic plugin commands
+    try {
+      const pluginData = await adminGet('/plugin/list');
+      if (pluginData.plugins && pluginData.plugins.length > 0) {
+        helpText += '\n--- Plugins ---\n';
+        for (const p of pluginData.plugins) {
+          for (const cmd of (p.commands || [])) {
+            helpText += `/p.${cmd.command} — ${cmd.description}\n`;
+          }
+        }
+      }
+    } catch (e) {
+      helpText += '\n--- Plugins ---\n(server unreachable)\n';
+    }
+
+    helpText += '\n/guide — tool trigger reference\n/help — this message';
+    await sendMessage(chatId, helpText);
     return;
   }
 
@@ -966,6 +1003,56 @@ async function handleMessage(msg) {
     return;
   }
 
+  // Dynamic plugin commands: /p.tasks, /p.balance, /p.calories.target 5000, etc.
+  if (text.startsWith('/p.')) {
+    const parts = text.slice(3).split(' ');
+    const cmdParts = parts[0].split('.');  // e.g. ["tasks"] or ["balance", "budget"]
+    const args = parts.slice(1).join(' ');
+
+    // Find which plugin owns this command
+    try {
+      const pluginList = await adminGet('/plugin/list');
+      let targetPlugin = null;
+      let targetCommand = null;
+
+      for (const p of pluginList.plugins) {
+        for (const cmd of (p.commands || [])) {
+          // Match: /p.tasks → command="tasks", /p.balance.budget → command="balance.budget"
+          if (cmd.command === parts[0] || cmd.command === cmdParts[0]) {
+            targetPlugin = p.name;
+            targetCommand = cmd.command;
+            break;
+          }
+        }
+        if (targetPlugin) break;
+      }
+
+      if (!targetPlugin) {
+        await sendMessage(chatId, `Unknown plugin command: /p.${parts[0]}`);
+        return;
+      }
+
+      const result = await adminPost('/plugin/command', {
+        plugin: targetPlugin,
+        command: targetCommand,
+        args: args,
+      });
+
+      if (result.ok && result.text) {
+        if (result.inline_keyboard) {
+          await sendMessageWithKeyboard(chatId, result.text, result.inline_keyboard);
+        } else {
+          await sendMessage(chatId, result.text);
+        }
+      } else {
+        await sendMessage(chatId, result.text || 'Plugin command failed.');
+      }
+    } catch (e) {
+      await sendMessage(chatId, 'Plugin system error: ' + e.message);
+    }
+    return;
+  }
+
   if (text.startsWith('/ask ')) {
     const question = text.slice(5).trim();
     if (!question) {
@@ -1035,12 +1122,53 @@ let _firstPoll = true;
 let _pollBackoff = 0;
 const _POLL_BACKOFF_MAX = 60000; // max 60s between retries
 
+async function handleCallbackQuery(query) {
+  const chatId = query.message?.chat?.id;
+  const messageId = query.message?.message_id;
+  const data = query.data || '';
+
+  // Format: plugin:<name>:<action>:<item_id>
+  if (data.startsWith('plugin:')) {
+    const parts = data.split(':');
+    if (parts.length >= 4) {
+      const pluginName = parts[1];
+      const action = parts[2];
+      const itemId = parts[3];
+
+      try {
+        const result = await adminPost('/plugin/callback', {
+          plugin: pluginName,
+          action,
+          item_id: itemId,
+        });
+
+        await answerCallbackQuery(query.id, result.message || 'Done');
+
+        // If updated view available, refresh the message
+        if (result.ok && result.updated && result.updated.text) {
+          await editMessageText(
+            chatId, messageId,
+            result.updated.text,
+            result.updated.inline_keyboard
+          );
+        } else if (result.ok) {
+          // Just append status to existing message
+          const existingText = query.message?.text || '';
+          await editMessageText(chatId, messageId, existingText + '\n\n' + (result.message || '✓'), null);
+        }
+      } catch (e) {
+        await answerCallbackQuery(query.id, 'Error: ' + e.message);
+      }
+    }
+  }
+}
+
 async function poll() {
   try {
     const res = await apiRequest('getUpdates', {
       offset,
       timeout: 30,
-      allowed_updates: 'message',
+      allowed_updates: JSON.stringify(['message', 'callback_query']),
     });
 
     // Success — reset backoff
@@ -1061,7 +1189,11 @@ async function poll() {
         _firstPoll = false;
         for (const update of res.result) {
           offset = update.update_id + 1;
-          if (update.message) {
+          if (update.callback_query) {
+            await handleCallbackQuery(update.callback_query).catch(e =>
+              console.error('[handleCallback error]', e.message)
+            );
+          } else if (update.message) {
             await handleMessage(update.message).catch(e =>
               console.error('[handleMessage error]', e.message)
             );
