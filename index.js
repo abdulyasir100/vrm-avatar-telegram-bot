@@ -594,8 +594,7 @@ async function handleMessage(msg) {
       '/idle <hours> — idle talk interval\n' +
       '/mood <0-100> — set mood value\n' +
       '/stepgoal <number> — daily step goal\n' +
-      '/memory stats|clear — memory\n' +
-;
+      '/memory stats|clear — memory\n';
 
     // Dynamic plugin commands
     try {
