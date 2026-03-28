@@ -582,7 +582,7 @@ async function handleMessage(msg) {
 
   if (text === '/start' || text === '/help') {
     let helpText =
-      'Suisei Bot\n\n' +
+      'Companion Bot\n\n' +
       '--- System ---\n' +
       '/ping — test bot\n' +
       '/avatar — server status\n' +
@@ -595,7 +595,7 @@ async function handleMessage(msg) {
       '/mood <0-100> — set mood value\n' +
       '/stepgoal <number> — daily step goal\n' +
       '/memory stats|clear — memory\n' +
-      '/clockin on|off|status — clock-in\n';
+;
 
     // Dynamic plugin commands
     try {
@@ -618,50 +618,26 @@ async function handleMessage(msg) {
   }
 
   if (text === '/guide') {
-    await sendMessage(chatId,
-      'Suisei Tool Guide\n\n' +
-      'Just talk naturally — Suisei detects keywords and uses the right tool.\n\n' +
-      '--- Money ---\n' +
-      '"spent 20k on food" → log expense\n' +
-      '"bought boba for 25k" → log expense\n' +
-      '"got paid 5000000" → log income\n' +
-      '"check my balance" → view budget\n' +
-      '\n--- Tasks ---\n' +
-      '"remind me to buy milk" → add task\n' +
-      '"add task: clean room" → add task\n' +
-      '"show my tasks" → list tasks\n' +
-      '"done with buy milk" → complete task\n' +
-      '\n--- Food & Calories ---\n' +
-      '"ate nasi goreng" → log meal\n' +
-      '"had 2 slices of pizza" → log meal\n' +
-      '"how many calories today" → check intake\n' +
-      '\n--- Weather ---\n' +
-      '"how\'s the weather" → forecast\n' +
-      '"is it gonna rain?" → forecast\n' +
-      '\n--- Calendar ---\n' +
-      '"what\'s on my schedule" → events\n' +
-      '"any meetings today?" → events\n' +
-      '\n--- Costume ---\n' +
-      '"change to casual" → swap VRM\n' +
-      '"wear the maid outfit" → swap VRM\n' +
-      '\n--- Memory ---\n' +
-      '"remember that I like sushi" → save\n' +
-      '"forget about the sushi thing" → delete\n' +
-      '\n--- Anime ---\n' +
-      '"find me frieren episode 9" → stream link\n' +
-      '"where to watch dandadan" → search\n' +
-      'Say "anime" + title, or use known titles\n' +
-      '\n--- Screen Time & Steps ---\n' +
-      '"how\'s my screen time" → app usage\n' +
-      '"how many steps today" → step count\n' +
-      '\n--- Entertainment ---\n' +
-      '"open gacha" / "pull" → gacha\n' +
-      '"spin roulette" → roulette wheel\n' +
-      '"give THR" / "angpao" → THR envelopes\n' +
-      '\n--- Political Memes ---\n' +
-      'Mention any Indonesian politician name\n' +
-      '(jokowi, prabowo, gibran, etc.)'
-    );
+    try {
+      const guideData = await adminGet('/plugin/guide');
+      let guideText = 'Tool Guide\n\nTalk naturally to trigger tools. Use intent words like "add", "check", "show", or call by nickname.\n';
+      for (const section of (guideData.sections || [])) {
+        guideText += `\n--- ${section.name} ---\n${section.guide}\n`;
+      }
+
+      // Add main features (not plugins)
+      guideText += '\n--- Main Features ---\n';
+      guideText += '"change to casual" → swap costume\n';
+      guideText += '"remember that..." → save memory\n';
+      guideText += '"open gacha" → gacha pull\n';
+      guideText += '"spin roulette" → roulette\n';
+      guideText += '"give THR" → THR envelopes\n';
+      guideText += '"screen time" / "steps" → sensor data\n';
+
+      await sendMessage(chatId, guideText);
+    } catch (e) {
+      await sendMessage(chatId, 'Guide unavailable: ' + e.message);
+    }
     return;
   }
 
@@ -744,7 +720,7 @@ async function handleMessage(msg) {
     }
     try {
       await adminPost('/admin/config', { sleep_force: val });
-      await sendMessage(chatId, val === 'on' ? 'Suisei is now sleeping.' : 'Suisei woke up.');
+      await sendMessage(chatId, val === 'on' ? 'Going to sleep.' : 'Woke up.');
     } catch (e) {
       await sendMessage(chatId, 'Failed: ' + e.message);
     }
@@ -920,39 +896,7 @@ async function handleMessage(msg) {
     return;
   }
 
-  if (text.startsWith('/clockin')) {
-    const sub = text.split(' ')[1];
-    if (sub === 'on' || sub === 'off') {
-      try {
-        await clockinPost(`/toggle?enabled=${sub === 'on'}`);
-        await sendMessage(chatId, `Clock-in automation ${sub === 'on' ? 'enabled' : 'disabled'}.`);
-      } catch (e) {
-        await sendMessage(chatId, 'Clock-in service unreachable: ' + e.message);
-      }
-      return;
-    }
-    if (!sub || sub === 'status') {
-      try {
-        const st = await clockinGet('/status');
-        const t = st.today || {};
-        const lines = [
-          `Clock-in Automation: ${st.enabled ? 'ON' : 'OFF'}`,
-          `Time: ${st.now}`,
-          '',
-          `Today (${t.date || 'N/A'}):`,
-          `  Scheduled: ${t.scheduled_clockin || '-'}`,
-          `  Clock-in: ${t.clockin_done ? t.clockin_time : 'pending'}`,
-          `  Clock-out: ${t.clockout_done ? 'done' : (t.clockout_time || 'pending')}`,
-        ];
-        await sendMessage(chatId, lines.join('\n'));
-      } catch (e) {
-        await sendMessage(chatId, 'Clock-in service unreachable: ' + e.message);
-      }
-      return;
-    }
-    await sendMessage(chatId, 'Usage: /clockin on|off|status');
-    return;
-  }
+  // Clock-in moved to plugin: /p.clockin, /p.clockin.status
 
   if (text.startsWith('/meme')) {
     const sub = text.split(' ')[1];
@@ -1313,7 +1257,7 @@ function validateConfig() {
 validateConfig();
 
 console.log('═══════════════════════════════════════');
-console.log(' Suisei Bot — starting');
+console.log(' Companion Bot — starting');
 console.log(' Avatar  :', AVATAR_SERVER_URL);
 console.log(' API     : http://0.0.0.0:' + API_PORT);
 console.log('═══════════════════════════════════════');
