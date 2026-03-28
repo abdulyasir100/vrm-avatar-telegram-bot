@@ -750,6 +750,27 @@ async function handleMessage(msg) {
     return;
   }
 
+  if (text.startsWith('/language')) {
+    const val = text.split(' ')[1];
+    if (val === 'en' || val === 'jp') {
+      try {
+        await adminPost('/admin/config', { tts_language: val });
+        await sendMessage(chatId, `Voice language: ${val === 'jp' ? 'Japanese 🇯🇵' : 'English 🇺🇸'}`);
+      } catch (e) {
+        await sendMessage(chatId, 'Failed: ' + e.message);
+      }
+      return;
+    }
+    try {
+      const cfg = await adminGet('/admin/config');
+      const lang = cfg.tts_language || 'en';
+      await sendMessage(chatId, `Current: ${lang === 'jp' ? 'Japanese 🇯🇵' : 'English 🇺🇸'}\nUsage: /language en|jp`);
+    } catch (e) {
+      await sendMessage(chatId, 'Usage: /language en|jp');
+    }
+    return;
+  }
+
   if (text.startsWith('/sticker')) {
     const val = text.split(' ')[1];
     if (val !== 'on' && val !== 'off') {
