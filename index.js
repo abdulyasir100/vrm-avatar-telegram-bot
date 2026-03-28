@@ -621,19 +621,28 @@ async function handleMessage(msg) {
       const guideData = await adminGet('/plugin/guide');
       let guideText = 'Tool Guide\n\nTalk naturally to trigger tools. Use intent words like "add", "check", "show", or call by nickname.\n';
       for (const section of (guideData.sections || [])) {
-        guideText += `\n--- ${section.name} ---\n${section.guide}\n`;
+        // Compact: just first 2 lines of each guide (examples)
+        const lines = section.guide.split('\n').filter(l => l.trim());
+        const summary = lines.slice(0, 3).join('\n');
+        guideText += `\n--- ${section.name} ---\n${summary}\n`;
       }
 
-      // Add main features (not plugins)
       guideText += '\n--- Main Features ---\n';
-      guideText += '"change to casual" → swap costume\n';
-      guideText += '"remember that..." → save memory\n';
-      guideText += '"open gacha" → gacha pull\n';
+      guideText += '"change to casual" → costume\n';
+      guideText += '"remember that..." → memory\n';
+      guideText += '"open gacha" → gacha\n';
       guideText += '"spin roulette" → roulette\n';
       guideText += '"give THR" → THR envelopes\n';
-      guideText += '"screen time" / "steps" → sensor data\n';
+      guideText += '"screen time" / "steps" → sensor\n';
 
-      await sendMessage(chatId, guideText);
+      // Split if too long for Telegram (4096 char limit)
+      if (guideText.length > 4000) {
+        const mid = guideText.lastIndexOf('\n---', 2000);
+        await sendMessage(chatId, guideText.substring(0, mid));
+        await sendMessage(chatId, guideText.substring(mid));
+      } else {
+        await sendMessage(chatId, guideText);
+      }
     } catch (e) {
       await sendMessage(chatId, 'Guide unavailable: ' + e.message);
     }
