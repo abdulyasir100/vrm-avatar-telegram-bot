@@ -667,15 +667,14 @@ async function handleMessage(msg) {
         clockinStatus = ci.enabled ? 'on' : 'off';
       } catch (e) { /* service down */ }
       const stickerPct = Math.round((cfg.sticker_chance || 0) * 100);
-      const idleToolPct = Math.round((cfg.idle_tool_chance || 0) * 100);
       const lines = [
         'Current Settings',
         '',
         `STT: ${cfg.stt_enabled ? 'on' : 'off'}`,
-        `TTS: ${cfg.tts_enabled ? 'on' : 'off'}`,
+        `TTS: ${cfg.tts_enabled ? 'on' : 'off'} (${cfg.tts_engine || '?'})`,
+        `Voice: ${cfg.tts_language === 'jp' ? 'Japanese' : 'English'}`,
         `Idle talk: ${cfg.idle_talk_hours}h`,
         `Sticker chance: ${stickerPct}%`,
-        `Idle tool chance: ${idleToolPct}%`,
         `Stickers: ${stickersEnabled ? 'on' : 'off'}`,
         `Emotion tags: ${showEmotionTags ? 'on' : 'off'}`,
         `Touch: ${cfg.touch_enabled ? 'on' : 'off'}`,
@@ -803,7 +802,6 @@ async function handleMessage(msg) {
     const rawVal = parts[2];
     const validKeys = {
       sticker_chance: { min: 0, max: 1, desc: '0-1' },
-      idle_tool_chance: { min: 0, max: 1, desc: '0-1' },
       sleep_hour: { min: 0, max: 23, desc: '0-23' },
       wake_hour: { min: 0, max: 23, desc: '0-23' },
     };
