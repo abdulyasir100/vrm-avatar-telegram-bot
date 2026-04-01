@@ -646,6 +646,8 @@ Start with a nickname to trigger plugins:
 "${nick}, whats my workout today" → gym
 "${nick}, i finished my workout" → gym done
 "${nick}, i did my daily reading" → habit done
+"${nick}, i wanna buy PS5" → wishlist add
+"${nick}, whats on my wishlist" → wishlist
 
 --- Main Features (no nickname) ---
 "change to maid costume" → costume
