@@ -629,34 +629,32 @@ async function handleMessage(msg) {
     try {
       const status = await adminGet('/status');
       const nick = (status.character_nicknames && status.character_nicknames[0]) || 'nickname';
-      const guideText = `Tool Trigger Examples
+      const guideData = await adminGet('/plugin/guide');
 
-Start with a nickname to trigger plugins:
+      let guideText = `Tool Trigger Examples\n\nStart with "${nick}" to trigger plugins:\n`;
 
---- Plugins (need nickname) ---
-"${nick}, i ate nasi goreng" → calorie
-"${nick}, i spent 50k on food" → expense
-"${nick}, check my balance" → balance
-"${nick}, add task buy groceries" → todo
-"${nick}, whats the weather" → weather
-"${nick}, whats my schedule" → calendar
-"${nick}, find me frieren" → anime search
-"${nick}, find me frieren latest ep" → anime stream
-"${nick}, show me jokowi meme" → meme
-"${nick}, whats my workout today" → gym
-"${nick}, i finished my workout" → gym done
-"${nick}, i did my daily reading" → habit done
-"${nick}, i wanna buy PS5" → wishlist add
-"${nick}, whats on my wishlist" → wishlist
+      for (const section of (guideData.sections || [])) {
+        guideText += `\n--- ${section.name} ---\n`;
+        for (const ex of section.examples.slice(0, 3)) {
+          guideText += `"${nick}, ${ex}" → ${section.name}\n`;
+        }
+      }
 
---- Main Features (no nickname) ---
-"change to maid costume" → costume
-"remember that I like coffee" → memory
-"open gacha" / "spin roulette" → games
-"give THR" → THR envelopes
-"screen time" / "steps today" → sensor
-"search for X" → web search (smart mode)`;
-      await sendMessage(chatId, guideText);
+      guideText += `\n--- Main Features (no nickname) ---\n`;
+      guideText += `"change to maid costume" → costume\n`;
+      guideText += `"remember that I like coffee" → memory\n`;
+      guideText += `"open gacha" / "spin roulette" → games\n`;
+      guideText += `"give THR" → THR envelopes\n`;
+      guideText += `"screen time" / "steps today" → sensor\n`;
+      guideText += `"search for X" → web search (smart mode)`;
+
+      if (guideText.length > 4000) {
+        const mid = guideText.lastIndexOf('\n---', 2000);
+        await sendMessage(chatId, guideText.substring(0, mid));
+        await sendMessage(chatId, guideText.substring(mid));
+      } else {
+        await sendMessage(chatId, guideText);
+      }
     } catch (e) {
       await sendMessage(chatId, 'Guide unavailable: ' + e.message);
     }
