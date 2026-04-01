@@ -1007,16 +1007,29 @@ Start with a nickname to trigger plugins:
       let targetPlugin = null;
       let targetCommand = null;
 
+      // Two-pass matching: exact match first, then prefix match
       for (const p of pluginList.plugins) {
         for (const cmd of (p.commands || [])) {
-          // Match: /p.tasks → command="tasks", /p.balance.budget → command="balance.budget"
-          if (cmd.command === parts[0] || cmd.command === cmdParts[0]) {
+          if (cmd.command === parts[0]) {
             targetPlugin = p.name;
             targetCommand = cmd.command;
             break;
           }
         }
         if (targetPlugin) break;
+      }
+      // Fallback: match base command (e.g. /p.gym → command="gym")
+      if (!targetPlugin) {
+        for (const p of pluginList.plugins) {
+          for (const cmd of (p.commands || [])) {
+            if (cmd.command === cmdParts[0]) {
+              targetPlugin = p.name;
+              targetCommand = cmd.command;
+              break;
+            }
+          }
+          if (targetPlugin) break;
+        }
       }
 
       if (!targetPlugin) {
