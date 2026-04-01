@@ -617,20 +617,23 @@ async function handleMessage(msg) {
   }
 
   if (text === '/guide') {
-    let guideText = `Tool Trigger Examples
+    try {
+      const status = await adminGet('/status');
+      const nick = (status.character_nicknames && status.character_nicknames[0]) || 'nickname';
+      const guideText = `Tool Trigger Examples
 
 Start with a nickname to trigger plugins:
 
 --- Plugins (need nickname) ---
-"suichan, i ate nasi goreng" → calorie
-"suichan, i spent 50k on food" → expense
-"suichan, check my balance" → balance
-"suichan, add task buy groceries" → todo
-"suichan, whats the weather" → weather
-"suichan, whats my schedule" → calendar
-"suichan, find me frieren" → anime search
-"suichan, find me frieren latest ep" → anime stream
-"suichan, show me jokowi meme" → meme
+"${nick}, i ate nasi goreng" → calorie
+"${nick}, i spent 50k on food" → expense
+"${nick}, check my balance" → balance
+"${nick}, add task buy groceries" → todo
+"${nick}, whats the weather" → weather
+"${nick}, whats my schedule" → calendar
+"${nick}, find me frieren" → anime search
+"${nick}, find me frieren latest ep" → anime stream
+"${nick}, show me jokowi meme" → meme
 
 --- Main Features (no nickname) ---
 "change to maid costume" → costume
@@ -639,8 +642,10 @@ Start with a nickname to trigger plugins:
 "give THR" → THR envelopes
 "screen time" / "steps today" → sensor
 "search for X" → web search (smart mode)`;
-
-    await sendMessage(chatId, guideText);
+      await sendMessage(chatId, guideText);
+    } catch (e) {
+      await sendMessage(chatId, 'Guide unavailable: ' + e.message);
+    }
     return;
   }
 
