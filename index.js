@@ -617,35 +617,30 @@ async function handleMessage(msg) {
   }
 
   if (text === '/guide') {
-    try {
-      const guideData = await adminGet('/plugin/guide');
-      let guideText = 'Tool Guide\n\nTalk naturally to trigger tools. Use intent words like "add", "check", "show", or call by nickname.\n';
-      for (const section of (guideData.sections || [])) {
-        // Compact: just first 2 lines of each guide (examples)
-        const lines = section.guide.split('\n').filter(l => l.trim());
-        const summary = lines.slice(0, 3).join('\n');
-        guideText += `\n--- ${section.name} ---\n${summary}\n`;
-      }
+    let guideText = `Tool Trigger Examples
 
-      guideText += '\n--- Main Features ---\n';
-      guideText += '"change to casual" → costume\n';
-      guideText += '"remember that..." → memory\n';
-      guideText += '"open gacha" → gacha\n';
-      guideText += '"spin roulette" → roulette\n';
-      guideText += '"give THR" → THR envelopes\n';
-      guideText += '"screen time" / "steps" → sensor\n';
+Start with a nickname to trigger plugins:
 
-      // Split if too long for Telegram (4096 char limit)
-      if (guideText.length > 4000) {
-        const mid = guideText.lastIndexOf('\n---', 2000);
-        await sendMessage(chatId, guideText.substring(0, mid));
-        await sendMessage(chatId, guideText.substring(mid));
-      } else {
-        await sendMessage(chatId, guideText);
-      }
-    } catch (e) {
-      await sendMessage(chatId, 'Guide unavailable: ' + e.message);
-    }
+--- Plugins (need nickname) ---
+"suichan, i ate nasi goreng" → calorie
+"suichan, i spent 50k on food" → expense
+"suichan, check my balance" → balance
+"suichan, add task buy groceries" → todo
+"suichan, whats the weather" → weather
+"suichan, whats my schedule" → calendar
+"suichan, find me frieren" → anime search
+"suichan, find me frieren latest ep" → anime stream
+"suichan, show me jokowi meme" → meme
+
+--- Main Features (no nickname) ---
+"change to maid costume" → costume
+"remember that I like coffee" → memory
+"open gacha" / "spin roulette" → games
+"give THR" → THR envelopes
+"screen time" / "steps today" → sensor
+"search for X" → web search (smart mode)`;
+
+    await sendMessage(chatId, guideText);
     return;
   }
 
