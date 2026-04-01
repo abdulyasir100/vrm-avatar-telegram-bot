@@ -143,7 +143,13 @@ function sendSticker(chatId, fileId) {
   );
 }
 
-function avatarChat(message, userName, image_base64 = null) {
+function pinChatMessage(chatId, messageId) {
+  return apiPost('pinChatMessage', { chat_id: chatId, message_id: messageId, disable_notification: true }).catch(e =>
+    console.error('[pinChatMessage error]', e.message)
+  );
+}
+
+function avatarChat(message, userName, image_base64 = null, reply_to = null) {
   return new Promise((resolve, reject) => {
     const body = {
       message,
@@ -152,6 +158,9 @@ function avatarChat(message, userName, image_base64 = null) {
     };
     if (image_base64) {
       body.image_base64 = image_base64;
+    }
+    if (reply_to) {
+      body.reply_to = reply_to;
     }
     const payload = JSON.stringify(body);
 
@@ -828,9 +837,21 @@ Start with a nickname to trigger plugins:
   }
 
   if (text.startsWith('/mood')) {
-    const val = parseInt(text.split(' ')[1]);
+    const arg = text.split(' ')[1];
+    if (!arg) {
+      // Show current mood
+      try {
+        const status = await adminGet('/status');
+        const m = status.mood || {};
+        await sendMessage(chatId, `Mood: ${Math.round(m.value || 0)}/100 (${m.bracket || '?'})`);
+      } catch (e) {
+        await sendMessage(chatId, 'Failed: ' + e.message);
+      }
+      return;
+    }
+    const val = parseInt(arg);
     if (isNaN(val) || val < 0 || val > 100) {
-      await sendMessage(chatId, 'Usage: /mood <0-100>');
+      await sendMessage(chatId, 'Usage: /mood [0-100]\nNo args = show current mood');
       return;
     }
     try {
@@ -1072,7 +1093,13 @@ Start with a nickname to trigger plugins:
   if (!text.startsWith('/')) {
     await sendMessage(chatId, '...');
     try {
-      const result = await avatarChat(text, 'Venomaru');
+      // Capture reply-to context if user is replying to a message
+      let replyTo = null;
+      if (msg.reply_to_message?.text) {
+        const from = msg.reply_to_message.from?.first_name || 'Someone';
+        replyTo = `${from}: ${msg.reply_to_message.text}`;
+      }
+      const result = await avatarChat(text, 'Venomaru', null, replyTo);
       const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
       await sendMessage(chatId, emotionTag + result.reply);
       if (stickersEnabled && result.sticker_id && Math.random() < 0.75) {
