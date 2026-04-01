@@ -643,6 +643,9 @@ Start with a nickname to trigger plugins:
 "${nick}, find me frieren" → anime search
 "${nick}, find me frieren latest ep" → anime stream
 "${nick}, show me jokowi meme" → meme
+"${nick}, whats my workout today" → gym
+"${nick}, i finished my workout" → gym done
+"${nick}, i did my daily reading" → habit done
 
 --- Main Features (no nickname) ---
 "change to maid costume" → costume
