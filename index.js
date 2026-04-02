@@ -109,6 +109,10 @@ function sendMessage(chatId, text) {
   );
 }
 
+function sendTyping(chatId) {
+  return apiPost('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => {});
+}
+
 function sendMessageWithKeyboard(chatId, text, inlineKeyboard) {
   const body = { chat_id: chatId, text };
   if (inlineKeyboard && inlineKeyboard.length > 0) {
@@ -451,7 +455,7 @@ async function handleVoiceMessage(msg) {
     return;
   }
 
-  await sendMessage(chatId, '...');
+  await sendTyping(chatId);
 
   try {
     // Download voice file from Telegram
@@ -514,7 +518,7 @@ async function handleMessage(msg) {
     lastMessageFrom = msg.from.first_name || msg.from.username || String(msg.from.id);
     lastMessageText = msg.caption ? msg.caption.slice(0, 100) : '(photo)';
 
-    await sendMessage(chatId, '...');
+    await sendTyping(chatId);
 
     try {
       // Pick largest photo size (last in array)
@@ -1068,7 +1072,7 @@ async function handleMessage(msg) {
       return;
     }
 
-    await sendMessage(chatId, '...');
+    await sendTyping(chatId);
 
     try {
       const result = await avatarChat(question, 'Venomaru');
@@ -1107,7 +1111,7 @@ async function handleMessage(msg) {
   }
 
   if (!text.startsWith('/')) {
-    await sendMessage(chatId, '...');
+    await sendTyping(chatId);
     try {
       // Capture reply-to context if user is replying to a message
       let replyTo = null;
