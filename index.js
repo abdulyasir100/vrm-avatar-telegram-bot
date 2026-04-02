@@ -105,7 +105,7 @@ function apiPost(method, body) {
 
 function sendMessage(chatId, text) {
   return apiPost('sendMessage', { chat_id: chatId, text }).catch(e =>
-    console.error('[sendMessage error]', e.message)
+    console.error(`[sendMessage error] ${e.message || e} | text=${(text||'').slice(0,80)}`)
   );
 }
 
@@ -139,7 +139,7 @@ function answerCallbackQuery(callbackQueryId, text) {
 
 function sendSticker(chatId, fileId) {
   return apiPost('sendSticker', { chat_id: chatId, sticker: fileId }).catch(e =>
-    console.error('[sendSticker error]', e.message)
+    console.error(`[sendSticker error] ${e.message || e}`)
   );
 }
 
