@@ -53,6 +53,7 @@ function apiRequest(method, params = {}) {
       path: `/bot${TOKEN}/${method}${query ? '?' + query : ''}`,
       method: 'GET',
       timeout: 35000,
+      family: 4, // Force IPv4
     };
 
     const req = https.get(options, res => {
@@ -78,6 +79,7 @@ function apiPost(method, body) {
       path: `/bot${TOKEN}/${method}`,
       method: 'POST',
       timeout: 60000,
+      family: 4, // Force IPv4 — IPv6 is broken on this network, causes AggregateError
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(payload),
