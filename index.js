@@ -77,7 +77,7 @@ function apiPost(method, body) {
       hostname: 'api.telegram.org',
       path: `/bot${TOKEN}/${method}`,
       method: 'POST',
-      timeout: 35000,
+      timeout: 60000,
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(payload),
@@ -103,8 +103,24 @@ function apiPost(method, body) {
   });
 }
 
+async function apiPostRetry(method, body, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await apiPost(method, body);
+    } catch (e) {
+      if (i < retries) {
+        const delay = (i + 1) * 2000; // 2s, 4s
+        console.warn(`[apiPost] ${method} failed (attempt ${i+1}/${retries+1}): ${e.message || e}, retrying in ${delay}ms`);
+        await new Promise(r => setTimeout(r, delay));
+      } else {
+        throw e;
+      }
+    }
+  }
+}
+
 function sendMessage(chatId, text) {
-  return apiPost('sendMessage', { chat_id: chatId, text }).catch(e =>
+  return apiPostRetry('sendMessage', { chat_id: chatId, text }).catch(e =>
     console.error(`[sendMessage error] ${e.message || e} | text=${(text||'').slice(0,80)}`)
   );
 }
@@ -142,7 +158,7 @@ function answerCallbackQuery(callbackQueryId, text) {
 }
 
 function sendSticker(chatId, fileId) {
-  return apiPost('sendSticker', { chat_id: chatId, sticker: fileId }).catch(e =>
+  return apiPostRetry('sendSticker', { chat_id: chatId, sticker: fileId }).catch(e =>
     console.error(`[sendSticker error] ${e.message || e}`)
   );
 }
