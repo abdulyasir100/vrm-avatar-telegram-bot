@@ -1143,13 +1143,13 @@ async function handleMessage(msg) {
       const gameTools = { challenge_suisei: 'pvp', start_battle: 'wild' };
       const gameMode = gameTools[result.tool_executed];
       if (gameMode) {
-        // Don't pass mode= since chat already started a battle via tool
         const gameUrl = 'https://game.venomaru.dev/static/index.html?v=3';
         console.log(`[game] Sending Play button: tool=${result.tool_executed}`);
-        // Send Suisei's message first, then the Play button separately
-        await sendMessage(chatId, emotionTag + result.reply);
-        await sendMessageWithKeyboard(chatId, '🎮 Tap to play:', [
-          [{ text: 'Play Astral Idols', web_app: { url: gameUrl } }]
+        // Only send Suisei's chat line, strip the battle data (Mini App handles it)
+        const replyLines = result.reply.split('\n');
+        const chatLine = replyLines[0] || result.reply;
+        await sendMessageWithKeyboard(chatId, emotionTag + chatLine, [
+          [{ text: '🎮 Play', web_app: { url: gameUrl } }]
         ]);
       } else {
         await sendMessage(chatId, emotionTag + result.reply);
