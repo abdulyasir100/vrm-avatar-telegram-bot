@@ -611,9 +611,13 @@ async function handleMessage(msg) {
     return;
   }
 
-  if (text === '/play') {
+  if (text === '/play' || text === '/play pvp' || text === '/play wild') {
+    const mode = text.includes('pvp') ? 'pvp' : text.includes('wild') ? 'wild' : '';
+    const url = mode
+      ? `https://game.venomaru.dev/static/index.html?mode=${mode}`
+      : 'https://game.venomaru.dev/static/index.html';
     await sendMessageWithKeyboard(chatId, 'Astral Idols', [
-      [{ text: '🎮 Play', web_app: { url: 'https://game.venomaru.dev/static/index.html' } }]
+      [{ text: '🎮 Play', web_app: { url } }]
     ]);
     return;
   }
@@ -1135,7 +1139,17 @@ async function handleMessage(msg) {
       }
       const result = await avatarChat(text, 'Venomaru', null, replyTo);
       const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
-      await sendMessage(chatId, emotionTag + result.reply);
+      // Attach Mini App button if a game battle tool was triggered
+      const gameTools = { challenge_suisei: 'pvp', start_battle: 'wild' };
+      const gameMode = gameTools[result.tool_executed];
+      if (gameMode) {
+        const gameUrl = `https://game.venomaru.dev/static/index.html?mode=${gameMode}`;
+        await sendMessageWithKeyboard(chatId, emotionTag + result.reply, [
+          [{ text: '🎮 Play', web_app: { url: gameUrl } }]
+        ]);
+      } else {
+        await sendMessage(chatId, emotionTag + result.reply);
+      }
       if (stickersEnabled && result.sticker_id && Math.random() < 0.75) {
         await sendSticker(chatId, result.sticker_id);
       }
