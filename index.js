@@ -611,6 +611,13 @@ async function handleMessage(msg) {
     return;
   }
 
+  if (text === '/play') {
+    await sendMessageWithKeyboard(chatId, 'Astral Idols', [
+      [{ text: '🎮 Play', web_app: { url: 'https://game.venomaru.dev/static/index.html' } }]
+    ]);
+    return;
+  }
+
   if (text === '/start' || text === '/help') {
     let helpText =
       'Companion Bot\n\n' +
@@ -620,11 +627,10 @@ async function handleMessage(msg) {
       '/settings — current config\n' +
       '/set <key> <value> — change setting\n' +
       '\n--- Toggles ---\n' +
-      '/stt, /tts, /sleep, /sticker, /emotion, /touch, /meme — on|off\n' +
+      '/stt, /tts, /sleep, /sticker, /emotion, /touch, /meme, /sensor — on|off\n' +
       '\n--- Settings ---\n' +
       '/idle <hours> — idle talk interval\n' +
       '/mood <0-100> — set mood value\n' +
-      '/stepgoal <number> — daily step goal\n' +
       '/memory stats|clear — memory\n';
 
     // Dynamic plugin commands
@@ -642,7 +648,7 @@ async function handleMessage(msg) {
       helpText += '\n--- Plugins ---\n(server unreachable)\n';
     }
 
-    helpText += '\n/guide — tool trigger reference\n/help — this message';
+    helpText += '\n/play — Astral Idols (Mini App)\n/guide — tool trigger reference\n/help — this message';
     await sendMessage(chatId, helpText);
     return;
   }
@@ -762,6 +768,21 @@ async function handleMessage(msg) {
     try {
       await adminPost('/admin/config', { sleep_force: val });
       await sendMessage(chatId, val === 'on' ? 'Going to sleep.' : 'Woke up.');
+    } catch (e) {
+      await sendMessage(chatId, 'Failed: ' + e.message);
+    }
+    return;
+  }
+
+  if (text.startsWith('/sensor')) {
+    const val = text.split(' ')[1];
+    if (val !== 'on' && val !== 'off') {
+      await sendMessage(chatId, 'Usage: /sensor on|off');
+      return;
+    }
+    try {
+      await adminPost('/admin/config', { sensor_enabled: val === 'on' });
+      await sendMessage(chatId, `Companion Sensor ${val === 'on' ? 'enabled' : 'disabled'}.`);
     } catch (e) {
       await sendMessage(chatId, 'Failed: ' + e.message);
     }
@@ -992,31 +1013,6 @@ async function handleMessage(msg) {
       return;
     }
     await sendMessage(chatId, 'Usage: /meme on|off|status');
-    return;
-  }
-
-  if (text.startsWith('/stepgoal')) {
-    const arg = text.split(' ')[1];
-    if (arg && !isNaN(arg)) {
-      const goal = parseInt(arg);
-      if (goal < 100 || goal > 100000) {
-        await sendMessage(chatId, 'Step goal must be between 100 and 100,000.');
-        return;
-      }
-      try {
-        await adminPost('/sensor/step-goal', { goal });
-        await sendMessage(chatId, `Step goal set to ${goal.toLocaleString()} steps.`);
-      } catch (e) {
-        await sendMessage(chatId, 'Failed to set step goal: ' + e.message);
-      }
-    } else {
-      try {
-        const data = await adminGet('/sensor/step-goal');
-        await sendMessage(chatId, `Current step goal: ${Number(data.step_goal).toLocaleString()} steps.\n\nUsage: /stepgoal <number>`);
-      } catch (e) {
-        await sendMessage(chatId, 'Failed to get step goal: ' + e.message);
-      }
-    }
     return;
   }
 
