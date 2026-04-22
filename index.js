@@ -635,7 +635,8 @@ async function handleMessage(msg) {
       '\n--- Settings ---\n' +
       '/idle <hours> — idle talk interval\n' +
       '/mood <0-100> — set mood value\n' +
-      '/memory stats|clear — memory\n';
+      '/memory stats|clear — memory\n' +
+      '/toolcall <normal|semi_normal|semi_off|off> — tool call sensitivity\n';
 
     // Dynamic plugin commands
     try {
@@ -725,6 +726,7 @@ async function handleMessage(msg) {
         `Sleep: ${s.is_sleeping ? 'sleeping' : 'awake'} (${s.sleep_schedule})`,
         `Memory: ${m.total_messages} msgs, ${m.core_memories} core`,
         `Clock-in auto: ${clockinStatus}`,
+        `Tool calls: ${cfg.tool_call_mode || 'normal'}`,
       ];
       await sendMessage(chatId, lines.join('\n'));
     } catch (e) {
@@ -742,6 +744,28 @@ async function handleMessage(msg) {
     try {
       await adminPost('/admin/config', { stt_enabled: val === 'on' });
       await sendMessage(chatId, `STT ${val === 'on' ? 'enabled' : 'disabled'}.`);
+    } catch (e) {
+      await sendMessage(chatId, 'Failed: ' + e.message);
+    }
+    return;
+  }
+
+  if (text.startsWith('/toolcall')) {
+    const val = text.split(' ')[1];
+    const valid = ['normal', 'semi_normal', 'semi_off', 'off'];
+    if (!valid.includes(val)) {
+      await sendMessage(chatId,
+        'Usage: /toolcall <mode>\n\n' +
+        '  normal      — all tools (default)\n' +
+        '  semi_normal — only main tools from user; idle unrestricted\n' +
+        '  semi_off    — no tools from user; idle can still use them\n' +
+        '  off         — no tools anywhere'
+      );
+      return;
+    }
+    try {
+      await adminPost('/admin/config', { tool_call_mode: val });
+      await sendMessage(chatId, `Tool call mode: ${val}.`);
     } catch (e) {
       await sendMessage(chatId, 'Failed: ' + e.message);
     }
