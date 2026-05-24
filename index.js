@@ -631,7 +631,7 @@ async function handleMessage(msg) {
       '/settings — current config\n' +
       '/set <key> <value> — change setting\n' +
       '\n--- Toggles ---\n' +
-      '/stt, /tts, /sleep, /sticker, /emotion, /touch, /meme, /sensor — on|off\n' +
+      '/stt, /tts, /sleep, /sticker, /emotion, /touch, /meme — on|off\n' +
       '\n--- Settings ---\n' +
       '/idle <hours> — idle talk interval\n' +
       '/mood <0-100> — set mood value\n' +
@@ -678,7 +678,6 @@ async function handleMessage(msg) {
       guideText += `"remember that I like coffee" → memory\n`;
       guideText += `"open gacha" / "spin roulette" → games\n`;
       guideText += `"give THR" → THR envelopes\n`;
-      guideText += `"screen time" / "steps today" → sensor\n`;
       guideText += `"search for X" → web search (smart mode)`;
 
       if (guideText.length > 4000) {
@@ -796,21 +795,6 @@ async function handleMessage(msg) {
     try {
       await adminPost('/admin/config', { sleep_force: val });
       await sendMessage(chatId, val === 'on' ? 'Going to sleep.' : 'Woke up.');
-    } catch (e) {
-      await sendMessage(chatId, 'Failed: ' + e.message);
-    }
-    return;
-  }
-
-  if (text.startsWith('/sensor')) {
-    const val = text.split(' ')[1];
-    if (val !== 'on' && val !== 'off') {
-      await sendMessage(chatId, 'Usage: /sensor on|off');
-      return;
-    }
-    try {
-      await adminPost('/admin/config', { sensor_enabled: val === 'on' });
-      await sendMessage(chatId, `Companion Sensor ${val === 'on' ? 'enabled' : 'disabled'}.`);
     } catch (e) {
       await sendMessage(chatId, 'Failed: ' + e.message);
     }
