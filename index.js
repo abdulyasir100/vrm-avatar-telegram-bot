@@ -623,73 +623,12 @@ async function handleMessage(msg) {
   }
 
   if (text === '/start' || text === '/help') {
-    let helpText =
-      'Companion Bot\n\n' +
-      '--- System ---\n' +
-      '/ping — test bot\n' +
-      '/avatar — server status\n' +
-      '/settings — current config\n' +
-      '/set <key> <value> — change setting\n' +
-      '\n--- Toggles ---\n' +
-      '/stt, /tts, /sleep, /sticker, /emotion, /touch, /meme — on|off\n' +
-      '\n--- Settings ---\n' +
-      '/idle <hours> — idle talk interval\n' +
-      '/mood <0-100> — set mood value\n' +
-      '/memory stats|clear — memory\n' +
-      '/toolcall <normal|semi_normal|semi_off|off> — tool call sensitivity\n';
-
-    // Dynamic plugin commands
-    try {
-      const pluginData = await adminGet('/plugin/list');
-      if (pluginData.plugins && pluginData.plugins.length > 0) {
-        helpText += '\n--- Plugins ---\n';
-        for (const p of pluginData.plugins) {
-          for (const cmd of (p.commands || [])) {
-            helpText += `/p.${cmd.command} — ${cmd.description}\n`;
-          }
-        }
-      }
-    } catch (e) {
-      helpText += '\n--- Plugins ---\n(server unreachable)\n';
-    }
-
-    helpText += '\n/play — Astral Idols (Mini App)\n/guide — tool trigger reference\n/help — this message';
-    await sendMessage(chatId, helpText);
+    await sendMessageWithKeyboard(chatId, HELP_HOME_TEXT, helpHomeKeyboard());
     return;
   }
 
   if (text === '/guide') {
-    try {
-      const status = await adminGet('/status');
-      const nick = (status.character_nicknames && status.character_nicknames[0]) || 'nickname';
-      const guideData = await adminGet('/plugin/guide');
-
-      let guideText = `Tool Trigger Examples\n\nStart with "${nick}" to trigger plugins:\n`;
-
-      for (const section of (guideData.sections || [])) {
-        guideText += `\n--- ${section.name} ---\n`;
-        for (const ex of section.examples.slice(0, 3)) {
-          guideText += `"${nick}, ${ex}" → ${section.name}\n`;
-        }
-      }
-
-      guideText += `\n--- Main Features (no nickname) ---\n`;
-      guideText += `"change to maid costume" → costume\n`;
-      guideText += `"remember that I like coffee" → memory\n`;
-      guideText += `"open gacha" / "spin roulette" → games\n`;
-      guideText += `"give THR" → THR envelopes\n`;
-      guideText += `"search for X" → web search (smart mode)`;
-
-      if (guideText.length > 4000) {
-        const mid = guideText.lastIndexOf('\n---', 2000);
-        await sendMessage(chatId, guideText.substring(0, mid));
-        await sendMessage(chatId, guideText.substring(mid));
-      } else {
-        await sendMessage(chatId, guideText);
-      }
-    } catch (e) {
-      await sendMessage(chatId, 'Guide unavailable: ' + e.message);
-    }
+    await sendGuide(chatId);
     return;
   }
 
@@ -1180,6 +1119,129 @@ let _firstPoll = true;
 let _pollBackoff = 0;
 const _POLL_BACKOFF_MAX = 60000; // max 60s between retries
 
+// ---- /help paginated menu ----
+const HELP_HOME_TEXT = 'Companion Bot — pick a category:';
+
+function helpHomeKeyboard() {
+  return [
+    [{ text: '⚙ System', callback_data: 'help:system' }, { text: '🔘 Toggles', callback_data: 'help:toggles' }],
+    [{ text: '🧩 Plugins', callback_data: 'help:plugins' }, { text: '✨ Features', callback_data: 'help:features' }],
+    [{ text: '🎮 Games', callback_data: 'help:games' }, { text: '📖 Guide', callback_data: 'help:guide' }],
+  ];
+}
+const HELP_BACK = [[{ text: '‹ Back', callback_data: 'help:home' }]];
+
+const HELP_SYSTEM_TEXT =
+  '⚙ System\n\n' +
+  '/ping — test the bot\n' +
+  '/avatar — server status\n' +
+  '/settings — current config\n' +
+  '/set <key> <value> — change a setting\n' +
+  '/memory stats|clear|forget — memory ops\n' +
+  '/idle <hours> — idle-talk interval\n' +
+  '/mood <0-100> — view or set mood\n' +
+  '/toolcall <normal|semi_normal|semi_off|off> — tool sensitivity\n' +
+  '/ask <question> — ask her directly\n' +
+  '/language en|jp — TTS voice language';
+
+const HELP_TOGGLES_TEXT =
+  '🔘 Toggles  (each takes on|off)\n\n' +
+  '/stt — speech-to-text\n' +
+  '/tts — text-to-speech\n' +
+  '/sleep — force sleep\n' +
+  '/sticker — sticker replies\n' +
+  '/emotion — emotion tags\n' +
+  '/touch — touch interaction\n' +
+  '/meme — meme service';
+
+const HELP_FEATURES_TEXT =
+  '✨ Features — just talk naturally, no command needed\n\n' +
+  '• Costume — "change into your maid costume"\n' +
+  '• Memory — "remember that I like coffee"\n' +
+  '• Gacha — "open gacha"\n' +
+  '• Roulette — "spin the roulette"\n' +
+  '• THR — "give me THR"\n' +
+  '• Web search — "search for X" (smart mode)';
+
+const HELP_GAMES_TEXT =
+  '🎮 Games\n\n' +
+  '/play — Astral Idols (Mini App)\n' +
+  '/play pvp — PvP mode\n' +
+  '/play wild — Wild encounter mode';
+
+// Returns an array of page strings (each < Telegram's 4096 limit), split on
+// plugin boundaries. The full plugin list overflows one message, so /help
+// paginates it with Prev/Next buttons.
+const HELP_PLUGINS_HEADER = '🧩 Plugins — start a message with her nickname (e.g. "suichan, ...").\n\n';
+async function buildPluginsPages() {
+  let plugins;
+  try {
+    const data = await adminGet('/plugin/list');
+    plugins = (data && data.plugins) || [];
+  } catch (e) {
+    return ['🧩 Plugins\n(server unreachable)'];
+  }
+  const blocks = [];
+  for (const p of plugins) {
+    const cmds = p.commands || [];
+    if (!cmds.length) continue;
+    let b = `${p.name} — ${p.description || ''}\n`;
+    for (const c of cmds) b += `  /p.${c.command} — ${c.description}\n`;
+    blocks.push(b);
+  }
+  if (!blocks.length) return ['🧩 Plugins\n(no plugin commands)'];
+
+  const CAP = 3500; // soft cap so header + page body stay well under 4096
+  const pages = [];
+  let cur = '';
+  for (const b of blocks) {
+    if (cur && (HELP_PLUGINS_HEADER.length + cur.length + b.length) > CAP) {
+      pages.push(cur);
+      cur = '';
+    }
+    cur += b + '\n';
+  }
+  if (cur) pages.push(cur);
+  return pages.map((body, i) =>
+    HELP_PLUGINS_HEADER + body.trimEnd() +
+    (pages.length > 1 ? `\n\nPage ${i + 1}/${pages.length}` : ''));
+}
+
+async function sendGuide(chatId) {
+  try {
+    const status = await adminGet('/status');
+    const nick = (status.character_nicknames && status.character_nicknames[0]) || 'nickname';
+    const guideData = await adminGet('/plugin/guide');
+
+    let guideText = `Tool Trigger Examples\n\nStart with "${nick}" to trigger plugins:\n`;
+
+    for (const section of (guideData.sections || [])) {
+      guideText += `\n--- ${section.name} ---\n`;
+      for (const ex of section.examples.slice(0, 3)) {
+        guideText += `"${nick}, ${ex}" → ${section.name}\n`;
+      }
+    }
+
+    // Features (no nickname) — keep in sync with HELP_FEATURES_TEXT.
+    guideText += `\n--- Features (no nickname needed) ---\n`;
+    guideText += `"change into your maid costume" → costume\n`;
+    guideText += `"remember that I like coffee" → memory\n`;
+    guideText += `"open gacha" / "spin the roulette" → games\n`;
+    guideText += `"give me THR" → THR envelopes\n`;
+    guideText += `"search for X" → web search (smart mode)`;
+
+    if (guideText.length > 4000) {
+      const mid = guideText.lastIndexOf('\n---', 2000);
+      await sendMessage(chatId, guideText.substring(0, mid));
+      await sendMessage(chatId, guideText.substring(mid));
+    } else {
+      await sendMessage(chatId, guideText);
+    }
+  } catch (e) {
+    await sendMessage(chatId, 'Guide unavailable: ' + e.message);
+  }
+}
+
 async function handleCallbackQuery(query) {
   const chatId = query.message?.chat?.id;
   const messageId = query.message?.message_id;
@@ -1218,6 +1280,43 @@ async function handleCallbackQuery(query) {
         await answerCallbackQuery(query.id, 'Error: ' + e.message);
       }
     }
+  }
+
+  // Format: help:<category>  (paginated /help menu)
+  if (data.startsWith('help:')) {
+    const cat = data.slice(5);
+    await answerCallbackQuery(query.id);
+    if (cat === 'home') {
+      await editMessageText(chatId, messageId, HELP_HOME_TEXT, helpHomeKeyboard());
+      return;
+    }
+    if (cat === 'guide') {
+      await sendGuide(chatId);
+      return;
+    }
+    let body, keyboard = HELP_BACK;
+    if (cat === 'system') body = HELP_SYSTEM_TEXT;
+    else if (cat === 'toggles') body = HELP_TOGGLES_TEXT;
+    else if (cat === 'features') body = HELP_FEATURES_TEXT;
+    else if (cat === 'games') {
+      body = HELP_GAMES_TEXT;
+      keyboard = [
+        [{ text: '🎮 Play', web_app: { url: 'https://game.venomaru.dev/static/index.html?v=3' } }],
+        [{ text: '‹ Back', callback_data: 'help:home' }],
+      ];
+    } else if (cat === 'plugins' || cat.startsWith('plugins:')) {
+      const idx = cat.includes(':') ? (parseInt(cat.split(':')[1], 10) || 0) : 0;
+      const pages = await buildPluginsPages();
+      const i = Math.max(0, Math.min(idx, pages.length - 1));
+      body = pages[i];
+      const nav = [];
+      if (i > 0) nav.push({ text: '‹ Prev', callback_data: `help:plugins:${i - 1}` });
+      if (i < pages.length - 1) nav.push({ text: 'Next ›', callback_data: `help:plugins:${i + 1}` });
+      keyboard = nav.length
+        ? [nav, [{ text: '‹ Back', callback_data: 'help:home' }]]
+        : HELP_BACK;
+    } else return;
+    await editMessageText(chatId, messageId, body, keyboard);
   }
 }
 
