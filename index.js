@@ -979,7 +979,7 @@ async function handleMessage(msg) {
       let real = null;
       for (const p of pluginList.plugins) {
         for (const c of (p.commands || [])) {
-          if (c.command.replace(/\./g, '_') === token) { real = c.command; break; }
+          if (commandAlias(c.command) === 'p_' + token) { real = c.command; break; }
         }
         if (real) break;
       }
@@ -1535,15 +1535,25 @@ const STATIC_COMMANDS = [
   ['meme', 'Meme service on|off'],
 ];
 
+// Shared transform for plugin-command aliases — must stay in sync with the
+// resolver in handleMessage (dots AND any other illegal char become "_").
+function commandAlias(command) {
+  return ('p_' + String(command).toLowerCase().replace(/[^a-z0-9]/g, '_')).slice(0, 32);
+}
+
 async function registerBotCommands(attempt = 1) {
   const commands = STATIC_COMMANDS.map(([command, description]) => ({ command, description }));
   let gotPlugins = false;
   try {
     const data = await adminGet('/plugin/list');
+    const seen = new Set(commands.map(c => c.command));
     for (const p of (data.plugins || [])) {
       for (const c of (p.commands || [])) {
+        const alias = commandAlias(c.command);
+        if (seen.has(alias)) continue;
+        seen.add(alias);
         commands.push({
-          command: ('p_' + c.command.replace(/\./g, '_')).toLowerCase().slice(0, 32),
+          command: alias,
           description: String(c.description || p.name).slice(0, 256),
         });
       }
