@@ -594,7 +594,7 @@ async function handleMessage(msg) {
     return;
   }
 
-  const text = (msg.text || '').trim();
+  let text = (msg.text || '').trim();
 
   if (!text) return;
 
@@ -628,7 +628,8 @@ async function handleMessage(msg) {
   }
 
   if (text === '/guide') {
-    await sendGuide(chatId);
+    const pages = await buildGuidePages();
+    await sendMessageWithKeyboard(chatId, pages[0], guideKeyboard(0, pages.length));
     return;
   }
 
@@ -967,6 +968,25 @@ async function handleMessage(msg) {
     return;
   }
 
+  // Underscore alias from the "/" suggestion popup (dots are illegal in
+  // registered commands): /p_worldcup_bets → /p.worldcup.bets
+  if (text.startsWith('/p_')) {
+    const sp = text.indexOf(' ');
+    const token = (sp === -1 ? text : text.slice(0, sp)).slice(3);
+    const rest = sp === -1 ? '' : text.slice(sp);
+    try {
+      const pluginList = await adminGet('/plugin/list');
+      let real = null;
+      for (const p of pluginList.plugins) {
+        for (const c of (p.commands || [])) {
+          if (c.command.replace(/\./g, '_') === token) { real = c.command; break; }
+        }
+        if (real) break;
+      }
+      if (real) text = '/p.' + real + rest;
+    } catch (e) { /* falls through to the unknown-command reply */ }
+  }
+
   // Dynamic plugin commands: /p.tasks, /p.balance, /p.calories.target 5000, etc.
   if (text.startsWith('/p.')) {
     const parts = text.slice(3).split(' ');
@@ -1207,39 +1227,59 @@ async function buildPluginsPages() {
     (pages.length > 1 ? `\n\nPage ${i + 1}/${pages.length}` : ''));
 }
 
-async function sendGuide(chatId) {
+// ---- /guide paginated menu (same pattern as /help plugins pages) ----
+const GUIDE_HEADER = '📖 Guide — say it like this:\n\n';
+async function buildGuidePages() {
+  let nick = 'nickname', sections = [];
   try {
     const status = await adminGet('/status');
-    const nick = (status.character_nicknames && status.character_nicknames[0]) || 'nickname';
+    nick = (status.character_nicknames && status.character_nicknames[0]) || 'nickname';
     const guideData = await adminGet('/plugin/guide');
-
-    let guideText = `Tool Trigger Examples\n\nStart with "${nick}" to trigger plugins:\n`;
-
-    for (const section of (guideData.sections || [])) {
-      guideText += `\n--- ${section.name} ---\n`;
-      for (const ex of section.examples.slice(0, 3)) {
-        guideText += `"${nick}, ${ex}" → ${section.name}\n`;
-      }
-    }
-
-    // Features (no nickname) — keep in sync with HELP_FEATURES_TEXT.
-    guideText += `\n--- Features (no nickname needed) ---\n`;
-    guideText += `"change into your maid costume" → costume\n`;
-    guideText += `"remember that I like coffee" → memory\n`;
-    guideText += `"open gacha" / "spin the roulette" → games\n`;
-    guideText += `"give me THR" → THR envelopes\n`;
-    guideText += `"search for X" → web search (smart mode)`;
-
-    if (guideText.length > 4000) {
-      const mid = guideText.lastIndexOf('\n---', 2000);
-      await sendMessage(chatId, guideText.substring(0, mid));
-      await sendMessage(chatId, guideText.substring(mid));
-    } else {
-      await sendMessage(chatId, guideText);
-    }
+    sections = guideData.sections || [];
   } catch (e) {
-    await sendMessage(chatId, 'Guide unavailable: ' + e.message);
+    return ['📖 Guide\n(server unreachable)'];
   }
+
+  const blocks = [];
+  for (const s of sections) {
+    let b = `${s.name}\n`;
+    for (const ex of (s.examples || []).slice(0, 3)) b += `  "${nick}, ${ex}"\n`;
+    blocks.push(b);
+  }
+  // Features (no nickname) — keep in sync with HELP_FEATURES_TEXT.
+  blocks.push(
+    'Features (no nickname needed)\n' +
+    '  "change into your maid costume" → costume\n' +
+    '  "remember that I like coffee" → memory\n' +
+    '  "open gacha" / "spin the roulette" → games\n' +
+    '  "give me THR" → THR envelopes\n' +
+    '  "search for X" → web search (smart mode)\n'
+  );
+
+  const CAP = 3500;
+  const pages = [];
+  let cur = '';
+  for (const b of blocks) {
+    if (cur && (GUIDE_HEADER.length + cur.length + b.length) > CAP) {
+      pages.push(cur);
+      cur = '';
+    }
+    cur += b + '\n';
+  }
+  if (cur) pages.push(cur);
+  return pages.map((body, i) =>
+    GUIDE_HEADER + body.trimEnd() +
+    (pages.length > 1 ? `\n\nPage ${i + 1}/${pages.length}` : ''));
+}
+
+function guideKeyboard(i, total) {
+  const nav = [];
+  if (i > 0) nav.push({ text: '‹ Prev', callback_data: `guide:${i - 1}` });
+  if (i < total - 1) nav.push({ text: 'Next ›', callback_data: `guide:${i + 1}` });
+  const rows = [];
+  if (nav.length) rows.push(nav);
+  rows.push([{ text: '‹ Help menu', callback_data: 'help:home' }]);
+  return rows;
 }
 
 async function handleCallbackQuery(query) {
@@ -1282,6 +1322,16 @@ async function handleCallbackQuery(query) {
     }
   }
 
+  // Format: guide:<page>  (paginated /guide menu)
+  if (data.startsWith('guide:')) {
+    await answerCallbackQuery(query.id);
+    const idx = parseInt(data.slice(6), 10) || 0;
+    const pages = await buildGuidePages();
+    const i = Math.max(0, Math.min(idx, pages.length - 1));
+    await editMessageText(chatId, messageId, pages[i], guideKeyboard(i, pages.length));
+    return;
+  }
+
   // Format: help:<category>  (paginated /help menu)
   if (data.startsWith('help:')) {
     const cat = data.slice(5);
@@ -1291,7 +1341,8 @@ async function handleCallbackQuery(query) {
       return;
     }
     if (cat === 'guide') {
-      await sendGuide(chatId);
+      const pages = await buildGuidePages();
+      await editMessageText(chatId, messageId, pages[0], guideKeyboard(0, pages.length));
       return;
     }
     let body, keyboard = HELP_BACK;
@@ -1457,6 +1508,60 @@ const apiServer = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ ok: false, error: 'Not found' }));
 });
 
+// ---- "/" command suggestions (Telegram setMyCommands) ----
+// Registered commands show in Telegram's autocomplete popup when typing "/".
+// Telegram only allows [a-z0-9_], so dot-style plugin commands get underscore
+// aliases (/p.worldcup.bets → /p_worldcup_bets), resolved back before routing.
+const STATIC_COMMANDS = [
+  ['help', 'Command menu'],
+  ['guide', 'How to trigger her tools'],
+  ['ping', 'Test the bot'],
+  ['avatar', 'Server status'],
+  ['settings', 'Current config'],
+  ['set', 'Change a setting'],
+  ['mood', 'View or set mood (0-100)'],
+  ['idle', 'Idle-talk interval (hours)'],
+  ['memory', 'Memory ops: stats|clear|forget'],
+  ['ask', 'Ask her directly'],
+  ['language', 'TTS voice language en|jp'],
+  ['toolcall', 'Tool sensitivity'],
+  ['play', 'Astral Idols (Mini App)'],
+  ['stt', 'Speech-to-text on|off'],
+  ['tts', 'Text-to-speech on|off'],
+  ['sleep', 'Force sleep on|off'],
+  ['sticker', 'Sticker replies on|off'],
+  ['emotion', 'Emotion tags on|off'],
+  ['touch', 'Touch interaction on|off'],
+  ['meme', 'Meme service on|off'],
+];
+
+async function registerBotCommands(attempt = 1) {
+  const commands = STATIC_COMMANDS.map(([command, description]) => ({ command, description }));
+  let gotPlugins = false;
+  try {
+    const data = await adminGet('/plugin/list');
+    for (const p of (data.plugins || [])) {
+      for (const c of (p.commands || [])) {
+        commands.push({
+          command: ('p_' + c.command.replace(/\./g, '_')).toLowerCase().slice(0, 32),
+          description: String(c.description || p.name).slice(0, 256),
+        });
+      }
+    }
+    gotPlugins = true;
+  } catch (e) {
+    console.error('[commands] Plugin list unavailable (attempt ' + attempt + '):', e.message);
+  }
+  try {
+    await apiPost('setMyCommands', { commands: commands.slice(0, 100) });
+    console.log(`[commands] Registered ${Math.min(commands.length, 100)} commands (plugins included: ${gotPlugins})`);
+  } catch (e) {
+    console.error('[commands] setMyCommands failed:', e.message);
+  }
+  // Avatar-server may still be booting — retry until plugin commands make it in.
+  if (!gotPlugins && attempt < 5) setTimeout(() => registerBotCommands(attempt + 1), 60000);
+}
+
 function validateConfig() {
   const errors = [];
   if (!TOKEN)                        errors.push('BOT_TOKEN env var is not set');
@@ -1478,5 +1583,10 @@ console.log('══════════════════════�
 apiServer.listen(API_PORT, '0.0.0.0', () => {
   console.log(`[api] HTTP API listening on port ${API_PORT}`);
 });
+
+registerBotCommands();
+// Re-register daily so newly deployed plugins show up in the "/" popup
+// without a bot restart.
+setInterval(() => registerBotCommands(), 24 * 3600 * 1000);
 
 poll();
