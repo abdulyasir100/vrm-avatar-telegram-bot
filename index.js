@@ -165,6 +165,47 @@ function sendSticker(chatId, fileId) {
   );
 }
 
+// --- Emoji reactions ---
+// Direction A: she reacts to the user's message based on her emotion tag.
+// Direction B: when the user reacts to one of HER messages, she notices and replies.
+// Only Telegram's standard private-chat reaction emojis are used (no Premium needed).
+const EMOTION_REACTIONS = {
+  HAPPY:     ['🔥', '😁', '🥰'],
+  SAD:       ['😢'],
+  SURPRISED: ['😱', '🤯'],
+  ANGRY:     ['🤬', '😡'],
+  THINKING:  ['🤔'],
+  NEUTRAL:   ['🗿', '😐'],
+};
+
+// Track HER recent messages (message_id -> text) so Direction B only fires on her
+// messages and can tell her exactly what the user reacted to.
+const recentBotMsgs = new Map();
+function recordBotMsg(messageId, text) {
+  if (!messageId) return;
+  recentBotMsgs.set(messageId, text || '');
+  if (recentBotMsgs.size > 60) recentBotMsgs.delete(recentBotMsgs.keys().next().value);
+}
+
+function setMessageReaction(chatId, messageId, emoji) {
+  return apiPost('setMessageReaction', {
+    chat_id: chatId,
+    message_id: messageId,
+    reaction: [{ type: 'emoji', emoji }],
+  }).catch(e => console.error(`[reaction error] ${e.message || e}`));
+}
+
+// React to the user's message based on her emotion — gated so it doesn't fire every time.
+function maybeReact(chatId, messageId, emotion) {
+  if (!reactionsEnabled || !messageId) return;
+  const key = (emotion || 'NEUTRAL').toUpperCase();
+  const pool = EMOTION_REACTIONS[key] || EMOTION_REACTIONS.NEUTRAL;
+  const chance = key === 'NEUTRAL' ? 0.12 : 0.65;
+  if (Math.random() > chance) return;
+  const emoji = pool[Math.floor(Math.random() * pool.length)];
+  setMessageReaction(chatId, messageId, emoji);
+}
+
 function pinChatMessage(chatId, messageId) {
   return apiPost('pinChatMessage', { chat_id: chatId, message_id: messageId, disable_notification: true }).catch(e =>
     console.error('[pinChatMessage error]', e.message)
@@ -461,6 +502,9 @@ let showEmotionTags = true;
 // --- Sticker toggle ---
 let stickersEnabled = true;
 
+// --- Emoji reactions toggle (both directions) ---
+let reactionsEnabled = true;
+
 async function handleVoiceMessage(msg) {
   const chatId = msg.chat.id;
   const voice = msg.voice || msg.audio;
@@ -493,7 +537,9 @@ async function handleVoiceMessage(msg) {
     // Send to chat pipeline
     const result = await avatarChat(transcribed, 'Venomaru');
     const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
-    await sendMessage(chatId, emotionTag + result.reply);
+    maybeReact(chatId, msg.message_id, result.emotion);
+    const sent = await sendMessage(chatId, emotionTag + result.reply);
+    if (sent?.result?.message_id) recordBotMsg(sent.result.message_id, result.reply);
     if (stickersEnabled && result.sticker_id && Math.random() < 0.75) {
       await sendSticker(chatId, result.sticker_id);
     }
@@ -785,6 +831,17 @@ async function handleMessage(msg) {
     }
     stickersEnabled = val === 'on';
     await sendMessage(chatId, `Stickers ${val === 'on' ? 'enabled' : 'disabled'}.`);
+    return;
+  }
+
+  if (text.startsWith('/reactions')) {
+    const val = text.split(' ')[1];
+    if (val !== 'on' && val !== 'off') {
+      await sendMessage(chatId, 'Usage: /reactions on|off');
+      return;
+    }
+    reactionsEnabled = val === 'on';
+    await sendMessage(chatId, `Emoji reactions ${val === 'on' ? 'enabled' : 'disabled'}.`);
     return;
   }
 
@@ -1109,18 +1166,23 @@ async function handleMessage(msg) {
       // Attach Mini App button if a game battle tool was triggered
       const gameTools = { challenge_suisei: 'pvp', start_battle: 'wild' };
       const gameMode = gameTools[result.tool_executed];
+      // Direction A: she reacts to the user's message based on her emotion.
+      maybeReact(chatId, msg.message_id, result.emotion);
+      let sent;
       if (gameMode) {
         const gameUrl = 'https://game.venomaru.dev/static/index.html?v=3';
         console.log(`[game] Sending Play button: tool=${result.tool_executed}`);
         // Only send Suisei's chat line, strip the battle data (Mini App handles it)
         const replyLines = result.reply.split('\n');
         const chatLine = replyLines[0] || result.reply;
-        await sendMessageWithKeyboard(chatId, emotionTag + chatLine, [
+        sent = await sendMessageWithKeyboard(chatId, emotionTag + chatLine, [
           [{ text: '🎮 Play', web_app: { url: gameUrl } }]
         ]);
       } else {
-        await sendMessage(chatId, emotionTag + result.reply);
+        sent = await sendMessage(chatId, emotionTag + result.reply);
       }
+      // Track her message so Direction B can react when the user reacts back.
+      if (sent?.result?.message_id) recordBotMsg(sent.result.message_id, result.reply);
       if (stickersEnabled && result.sticker_id && Math.random() < 0.75) {
         await sendSticker(chatId, result.sticker_id);
       }
@@ -1133,6 +1195,33 @@ async function handleMessage(msg) {
   }
 
   await sendMessage(chatId, `Unknown command: ${text}\nSend /help for usage.`);
+}
+
+// Direction B: the user reacted to one of HER messages — she notices and replies.
+async function handleMessageReaction(reaction) {
+  if (!reactionsEnabled) return;
+  if (reaction.user?.id !== ALLOWED_ID) return;            // owner-only
+  const herText = recentBotMsgs.get(reaction.message_id);
+  if (!herText) return;                                    // not one of her tracked messages
+
+  // Only fire on a newly-ADDED emoji (ignore removals / non-emoji custom reactions).
+  const oldEmojis = new Set((reaction.old_reaction || []).filter(r => r.type === 'emoji').map(r => r.emoji));
+  const added = (reaction.new_reaction || []).filter(r => r.type === 'emoji' && !oldEmojis.has(r.emoji)).map(r => r.emoji);
+  if (added.length === 0) return;
+
+  const emoji = added[0];
+  const chatId = reaction.chat.id;
+  console.log(`[reaction] user reacted ${emoji} to her msg ${reaction.message_id}`);
+  try {
+    await sendTyping(chatId);
+    const ctx = `[Venomaru just reacted with ${emoji} to your message: "${herText.slice(0, 200)}". React to that briefly, in character.]`;
+    const result = await avatarChat(ctx, 'Venomaru');
+    const emotionTag = (showEmotionTags && result.emotion) ? `[${result.emotion}] ` : '';
+    const sent = await sendMessage(chatId, emotionTag + result.reply);
+    if (sent?.result?.message_id) recordBotMsg(sent.result.message_id, result.reply);
+  } catch (e) {
+    console.error('[reaction reply error]', e.message);
+  }
 }
 
 let _firstPoll = true;
@@ -1170,6 +1259,7 @@ const HELP_TOGGLES_TEXT =
   '/tts — text-to-speech\n' +
   '/sleep — force sleep\n' +
   '/sticker — sticker replies\n' +
+  '/reactions — emoji reactions\n' +
   '/emotion — emotion tags\n' +
   '/touch — touch interaction\n' +
   '/meme — meme service';
@@ -1376,7 +1466,7 @@ async function poll() {
     const res = await apiRequest('getUpdates', {
       offset,
       timeout: 30,
-      allowed_updates: JSON.stringify(['message', 'callback_query']),
+      allowed_updates: JSON.stringify(['message', 'callback_query', 'message_reaction']),
     });
 
     // Success — reset backoff
@@ -1404,6 +1494,10 @@ async function poll() {
           } else if (update.message) {
             await handleMessage(update.message).catch(e =>
               console.error('[handleMessage error]', e.message)
+            );
+          } else if (update.message_reaction) {
+            await handleMessageReaction(update.message_reaction).catch(e =>
+              console.error('[handleMessageReaction error]', e.message)
             );
           }
         }
@@ -1530,6 +1624,7 @@ const STATIC_COMMANDS = [
   ['tts', 'Text-to-speech on|off'],
   ['sleep', 'Force sleep on|off'],
   ['sticker', 'Sticker replies on|off'],
+  ['reactions', 'Emoji reactions on|off'],
   ['emotion', 'Emotion tags on|off'],
   ['touch', 'Touch interaction on|off'],
   ['meme', 'Meme service on|off'],
