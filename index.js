@@ -1318,12 +1318,10 @@ async function buildPluginsPages() {
 }
 
 // ---- /guide paginated menu (same pattern as /help plugins pages) ----
-const GUIDE_HEADER = '📖 Guide — say it like this:\n\n';
+const GUIDE_HEADER = '📖 Guide — just talk to her naturally, no nickname needed:\n\n';
 async function buildGuidePages() {
-  let nick = 'nickname', sections = [];
+  let sections = [];
   try {
-    const status = await adminGet('/status');
-    nick = (status.character_nicknames && status.character_nicknames[0]) || 'nickname';
     const guideData = await adminGet('/plugin/guide');
     sections = guideData.sections || [];
   } catch (e) {
@@ -1333,12 +1331,12 @@ async function buildGuidePages() {
   const blocks = [];
   for (const s of sections) {
     let b = `${s.name}\n`;
-    for (const ex of (s.examples || []).slice(0, 3)) b += `  "${nick}, ${ex}"\n`;
+    for (const ex of (s.examples || []).slice(0, 3)) b += `  "${ex}"\n`;
     blocks.push(b);
   }
-  // Features (no nickname) — keep in sync with HELP_FEATURES_TEXT.
+  // Main features — keep in sync with HELP_FEATURES_TEXT.
   blocks.push(
-    'Features (no nickname needed)\n' +
+    'Main features\n' +
     '  "change into your maid costume" → costume\n' +
     '  "remember that I like coffee" → memory\n' +
     '  "open gacha" / "spin the roulette" → games\n' +
